@@ -5,3 +5,4 @@
 from ._version import __version__
 from .robot_interface import RobotInterface
 from .gripper_interface import GripperInterface
+from .camera_interface import CameraInterface

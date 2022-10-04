@@ -1,0 +1,9 @@
+server_only: false
+ip: 0.0.0.0
+port: 50053
+time_out: 15
+
+width: 480
+height: 270
+framerate: 30
+downsample: 3

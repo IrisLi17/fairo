@@ -66,6 +66,11 @@ service GripperServer {
     rpc ControlUpdate(GripperState) returns(GripperCommand) {}
 }
 
+service CameraServer {
+  rpc SendImage(CameraImage) returns (CameraStatus) {}
+  rpc GetLatestImage(Empty) returns (CameraTimeStampedImage) {}
+}
+
 message GripperMetadata {
   string polymetis_version = 1;
   int32 hz = 2;
@@ -135,6 +140,22 @@ message TorqueCommand {
   // Contains the command sent to the robot.
   google.protobuf.Timestamp timestamp = 1;
   repeated float joint_torques = 2;
+}
+
+message CameraImage {
+  int32 width = 1;
+  int32 height = 2;
+  int32 channel = 3;
+  repeated int32 image_data = 4;
+}
+
+message CameraTimeStampedImage {
+  google.protobuf.Timestamp timestamp = 1;
+  CameraImage image = 2;
+}
+
+message CameraStatus {
+  bool ok = 1;
 }
 
 message Empty {}
