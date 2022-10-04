@@ -14,7 +14,7 @@ robot_client:
     hz: ${hz}
     robot_model_cfg: ${robot_model}
   executable_cfg:
-    robot_ip: "172.16.0.2"
+    robot_ip: "192.168.1.110"
     control_ip: ${ip}
     control_port: ${port}
     readonly: false
