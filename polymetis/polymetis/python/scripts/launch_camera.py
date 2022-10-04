@@ -41,9 +41,13 @@ def main(cfg):
                 frames = pipeline.wait_for_frames()
                 color_frame = frames.get_color_frame()
                 color_image = np.asarray(color_frame.get_data())[::cfg.downsample, ::cfg.downsample, :]
-                print("send shape", color_image.shape, time.time() - start_time)
+                # print("send shape", color_image.shape, time.time() - start_time)  # (90, 160, 3)
                 color_image = np.reshape(color_image, -1)
                 stub.SendImage(polymetis_pb2.CameraImage(
                     width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=3, 
                     image_data=color_image.tolist()
                 ))
+
+
+if __name__ == "__main__":
+    main()

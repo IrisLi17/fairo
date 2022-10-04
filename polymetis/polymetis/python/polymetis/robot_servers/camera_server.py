@@ -20,7 +20,7 @@ class CameraServicer(polymetis_pb2_grpc.CameraServerServicer):
         # print("input timestamp", timestamp)
         timed_image = polymetis_pb2.CameraTimeStampedImage(image=request)
         timed_image.timestamp.GetCurrentTime()
-        print("input timestamp", timed_image.timestamp)
+        # print("input timestamp", timed_image.timestamp)
         self.image_buffer.append(timed_image)
         return polymetis_pb2.CameraStatus(ok=True)
     
