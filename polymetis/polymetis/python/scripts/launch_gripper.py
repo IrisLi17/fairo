@@ -8,15 +8,22 @@
 import os
 import signal
 import time
+import logging
 
 import hydra
 
 from polymetis.robot_servers import GripperServerLauncher
 from polymetis.utils.grpc_utils import check_server_exists
+from polymetis.utils.data_dir import PKG_ROOT_DIR
 
+
+log = logging.getLogger(__name__)
 
 @hydra.main(config_name="launch_gripper")
 def main(cfg):
+    build_dir = os.path.abspath(os.path.join(PKG_ROOT_DIR, "..", "..", "build"))
+    log.info(f"Adding {build_dir} to $PATH")
+    os.environ["PATH"] = build_dir + os.pathsep + os.environ["PATH"]
     if cfg.gripper:
         pid = os.fork()
     else:

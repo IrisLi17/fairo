@@ -3,7 +3,7 @@ gripper:
   use_real_time: false
   executable_cfg:
     exec: franka_hand_client
-    robot_ip: "172.16.0.2"
+    robot_ip: "192.168.1.110"
     control_ip: ${ip}
     control_port: ${port}
   metadata_cfg: 
