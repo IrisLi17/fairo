@@ -162,7 +162,7 @@ message CameraIntrinsic {
   float fy = 3;
   int32 height = 4;
   int32 width = 5;
-  string model = 6;
+  int32 model = 6;
   float ppx = 7;
   float ppy = 8;
 }
