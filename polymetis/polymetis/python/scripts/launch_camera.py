@@ -33,9 +33,16 @@ def main(cfg):
         pipeline = rs.pipeline()
         config = rs.config()
         config.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.framerate)
+        if cfg.use_depth:
+            config.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.framerate)
         profile = pipeline.start(config)
         color_intrinsics = profile.get_stream(
             rs.stream.color).as_video_stream_profile().get_intrinsics()
+        if cfg.use_depth:
+            depth_sensor = profile.get_device().first_depth_sensor()
+            depth_scale = depth_sensor.get_depth_scale()
+            print("Depth Scale is: " , depth_scale)
+            align = rs.align(rs.stream.color)
         with grpc.insecure_channel(f'{cfg.ip}:{cfg.port}') as channel:
             stub = polymetis_pb2_grpc.CameraServerStub(channel)
             stub.SendIntrinsic(
@@ -50,17 +57,24 @@ def main(cfg):
                     ppy=color_intrinsics.ppy,
                 )
             )
-            print(stub.GetIntrinsic(polymetis_pb2.Empty()))
             start_time = time.time()
             while True:
                 frames = pipeline.wait_for_frames()
+                if cfg.use_depth:
+                    frames = align.process(frames)
+                    # Get aligned frames
+                    depth_frame = frames.get_depth_frame() # aligned_depth_frame is a 640x480 depth image
+                    depth_image = np.expand_dims(np.asarray(depth_frame.get_data())[::cfg.downsample, ::cfg.downsample], axis=-1)
                 color_frame = frames.get_color_frame()
                 color_image = np.asarray(color_frame.get_data())[::cfg.downsample, ::cfg.downsample, :]
-                # print("send shape", color_image.shape, time.time() - start_time)  # (90, 160, 3)
-                color_image = np.reshape(color_image, -1)
+                if cfg.use_depth:
+                    sent_image = np.concatenate([color_image, depth_image], axis=-1)
+                else:
+                    # print("send shape", color_image.shape, time.time() - start_time)  # (90, 160, 3)
+                    sent_image = color_image
                 stub.SendImage(polymetis_pb2.CameraImage(
-                    width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=3, 
-                    image_data=color_image.tolist()
+                    width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=color_image.shape[-1], 
+                    image_data=sent_image.reshape(-1).tolist()
                 ))
 
 
