@@ -21,7 +21,12 @@ class CameraInterface:
         n_height = image.height
         n_channel = image.channel
         # convert bgr to rgb
-        image_data = np.array(image.image_data).reshape((n_height, n_width, n_channel)).astype(np.uint8)[..., ::-1]
+        image_data = np.array(image.image_data).reshape((n_height, n_width, n_channel))
+        image_data[..., :3] = image_data[..., :3][..., ::-1]
+        if n_channel == 4:
+            camera_metadata = self.stub.GetMetaData(EMPTY)
+            depth_scale = camera_metadata.depth_scale
+            image_data[..., -1] *= depth_scale
         return (image_data, timestamp)
     
     def get_intrinsic(self):

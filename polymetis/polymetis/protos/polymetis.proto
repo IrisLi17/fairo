@@ -71,6 +71,8 @@ service CameraServer {
   rpc GetLatestImage(Empty) returns (CameraTimeStampedImage) {}
   rpc SendIntrinsic(CameraIntrinsic) returns (CameraStatus) {}
   rpc GetIntrinsic(Empty) returns (CameraIntrinsic) {}
+  rpc SendMetaData(CameraMetaData) returns (CameraStatus) {}
+  rpc GetMetaData(Empty) returns (CameraMetaData) {}
 }
 
 message GripperMetadata {
@@ -165,6 +167,10 @@ message CameraIntrinsic {
   int32 model = 6;
   float ppx = 7;
   float ppy = 8;
+}
+
+message CameraMetaData {
+  float depth_scale = 1;
 }
 
 message CameraStatus {

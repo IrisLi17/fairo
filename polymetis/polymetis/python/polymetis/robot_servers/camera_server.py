@@ -12,6 +12,7 @@ class CameraServicer(polymetis_pb2_grpc.CameraServerServicer):
         super().__init__()
         self.image_buffer = deque(maxlen=10)
         self.intrinsic: polymetis_pb2.CameraIntrinsic = None
+        self.metadata: polymetis_pb2.CameraMetaData = None
     
     def SendImage(self, request: polymetis_pb2.CameraImage, context):
         # now_time = time.time()
@@ -36,6 +37,13 @@ class CameraServicer(polymetis_pb2_grpc.CameraServerServicer):
 
     def GetIntrinsic(self, request, context):
         return self.intrinsic
+    
+    def SendMetaData(self, request: polymetis_pb2.CameraMetaData, context):
+        self.metadata = request
+        return polymetis_pb2.CameraStatus(ok=True)
+    
+    def GetMetaData(self, request, context):
+        return self.metadata
 
 
 class CameraServerLauncher:

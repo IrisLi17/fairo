@@ -57,6 +57,12 @@ def main(cfg):
                     ppy=color_intrinsics.ppy,
                 )
             )
+            if cfg.use_depth:
+                stub.SendMetaData(
+                    polymetis_pb2.CameraMetaData(
+                        depth_scale=depth_scale
+                    )
+                )
             start_time = time.time()
             while True:
                 frames = pipeline.wait_for_frames()
@@ -73,7 +79,7 @@ def main(cfg):
                     # print("send shape", color_image.shape, time.time() - start_time)  # (90, 160, 3)
                     sent_image = color_image
                 stub.SendImage(polymetis_pb2.CameraImage(
-                    width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=color_image.shape[-1], 
+                    width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=sent_image.shape[-1], 
                     image_data=sent_image.reshape(-1).tolist()
                 ))
 
