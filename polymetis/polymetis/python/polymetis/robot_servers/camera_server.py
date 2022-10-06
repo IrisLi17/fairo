@@ -11,6 +11,7 @@ class CameraServicer(polymetis_pb2_grpc.CameraServerServicer):
     def __init__(self):
         super().__init__()
         self.image_buffer = deque(maxlen=10)
+        self.intrinsic: polymetis_pb2.CameraIntrinsic = None
     
     def SendImage(self, request: polymetis_pb2.CameraImage, context):
         # now_time = time.time()
@@ -28,6 +29,13 @@ class CameraServicer(polymetis_pb2_grpc.CameraServerServicer):
         if len(self.image_buffer) > 0:
             return self.image_buffer[-1]
         return None
+    
+    def SendIntrinsic(self, request: polymetis_pb2.CameraIntrinsic, context):
+        self.intrinsic = request
+        return polymetis_pb2.CameraStatus(ok=True)
+
+    def GetIntrinsic(self, request, context):
+        return self.intrinsic
 
 
 class CameraServerLauncher:

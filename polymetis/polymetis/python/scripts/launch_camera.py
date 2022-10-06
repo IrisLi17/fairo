@@ -33,9 +33,24 @@ def main(cfg):
         pipeline = rs.pipeline()
         config = rs.config()
         config.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.framerate)
-        pipeline.start(config)
+        profile = pipeline.start(config)
+        color_intrinsics = profile.get_stream(
+            rs.stream.color).as_video_stream_profile().get_intrinsics()
         with grpc.insecure_channel(f'{cfg.ip}:{cfg.port}') as channel:
             stub = polymetis_pb2_grpc.CameraServerStub(channel)
+            stub.SendIntrinsic(
+                polymetis_pb2.CameraIntrinsic(
+                    coeffs=color_intrinsics.coeffs, 
+                    fx=color_intrinsics.fx,
+                    fy=color_intrinsics.fy,
+                    height=color_intrinsics.height,
+                    width=color_intrinsics.width,
+                    model=color_intrinsics.model,
+                    ppx=color_intrinsics.ppx,
+                    ppy=color_intrinsics.ppy,
+                )
+            )
+            print(stub.GetIntrinsic(polymetis_pb2.Empty()))
             start_time = time.time()
             while True:
                 frames = pipeline.wait_for_frames()
