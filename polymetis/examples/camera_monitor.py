@@ -1,5 +1,6 @@
 from polymetis import CameraInterface
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 if __name__ == "__main__":
@@ -19,7 +20,7 @@ if __name__ == "__main__":
             print(timestamp)
         else:
             ax[0].cla()
-            ax[0].imshow(image[..., :3])
+            ax[0].imshow(image[..., :3].astype(np.uint8))
             ax[1].cla()
             ax[1].imshow(image[..., -1])
             plt.pause(0.1)
