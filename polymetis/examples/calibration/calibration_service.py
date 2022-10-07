@@ -168,5 +168,5 @@ class CalibrationService:
         
 
 if __name__ == "__main__":
-    calibrator = CalibrationService("101.6.103.171")
+    calibrator = CalibrationService("localhost")
     calibrator.run()
