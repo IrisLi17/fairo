@@ -70,7 +70,7 @@ def main(cfg):
                     frames = align.process(frames)
                     # Get aligned frames
                     depth_frame = frames.get_depth_frame() # aligned_depth_frame is a 640x480 depth image
-                    depth_image = np.expand_dims(np.asarray(depth_frame.get_data())[::cfg.downsample, ::cfg.downsample], axis=-1).astype(np.int32)
+                    depth_image = np.expand_dims(np.asarray(depth_frame.get_data())[::cfg.downsample, ::cfg.downsample], axis=-1).astype(np.int16)
                 color_frame = frames.get_color_frame()
                 color_image = np.asarray(color_frame.get_data())[::cfg.downsample, ::cfg.downsample, :].astype(np.uint8)
                 if cfg.use_depth:
