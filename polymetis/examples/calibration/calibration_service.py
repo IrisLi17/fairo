@@ -68,7 +68,10 @@ class CalibrationBackend:
         for i in range(len(marker_corners)):
             xys = marker_corners[i]
             for j in range(xys.shape[0]):
-                image[int(xys[j][1]), int(xys[j][0])] = np.array([255, 0, 0], dtype=np.uint8)
+                image[
+                    max(int(xys[j][1]) - 1, 0): min(int(xys[j][1]) + 2, image.shape[0]), 
+                    max(int(xys[j][0]) - 1, 0): min(int(xys[j][0]) + 2, image.shape[1])
+                ] = np.array([255, 0, 0], dtype=np.uint8)
         if charuco_corners is not None:
             for i in range(len(charuco_corners)):
                 image[int(charuco_corners[i][1]), int(charuco_corners[i][0])] = np.array([0, 255, 0], dtype=np.uint8)
@@ -94,7 +97,7 @@ class CalibrationService:
         self.calibration_backend = CalibrationBackend(camera_matrix, dist_coeffs, image.shape[1], image.shape[0])
         self.capture_image_lock = False
         self.current_image_and_feature = None
-        self.captured_data = deque()
+        self.captured_data = deque(maxlen=20)
         self.merged_feature_image = np.zeros_like(image, dtype=np.uint8)
         self.calibration_result = None
         self.keyboard_monitor_thr = threading.Thread(target=self.keyboard_monitor, daemon=True)
@@ -116,6 +119,7 @@ class CalibrationService:
                         max(int(point[1]) - 1, 0): min(int(point[1]) + 2, self.merged_feature_image.shape[0]), 
                         max(int(point[0]) - 1, 0): min(int(point[0]) + 2, self.merged_feature_image.shape[1])
                     ] = np.array([255, 0, 0], dtype=np.uint8)
+                print(f"Capture {len(self.captured_data)}")
                 self.capture_image_lock = False
             elif pressed_key == "r":
                 if len(self.captured_data) < 3:
