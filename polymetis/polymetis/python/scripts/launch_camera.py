@@ -70,18 +70,20 @@ def main(cfg):
                     frames = align.process(frames)
                     # Get aligned frames
                     depth_frame = frames.get_depth_frame() # aligned_depth_frame is a 640x480 depth image
-                    depth_image = np.expand_dims(np.asarray(depth_frame.get_data())[::cfg.downsample, ::cfg.downsample], axis=-1)
+                    depth_image = np.expand_dims(np.asarray(depth_frame.get_data())[::cfg.downsample, ::cfg.downsample], axis=-1).astype(np.int32)
                 color_frame = frames.get_color_frame()
-                color_image = np.asarray(color_frame.get_data())[::cfg.downsample, ::cfg.downsample, :]
+                color_image = np.asarray(color_frame.get_data())[::cfg.downsample, ::cfg.downsample, :].astype(np.uint8)
                 if cfg.use_depth:
-                    sent_image = np.concatenate([color_image, depth_image], axis=-1)
+                    stub.SendImage(polymetis_pb2.CameraImage(
+                        width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=4, 
+                        image_data=color_image.reshape(-1).tobytes(), depth_data=depth_image.reshape(-1).tobytes()
+                    ))
                 else:
                     # print("send shape", color_image.shape, time.time() - start_time)  # (90, 160, 3)
-                    sent_image = color_image
-                stub.SendImage(polymetis_pb2.CameraImage(
-                    width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=sent_image.shape[-1], 
-                    image_data=sent_image.reshape(-1).tolist()
-                ))
+                    stub.SendImage(polymetis_pb2.CameraImage(
+                        width=cfg.width // cfg.downsample, height=cfg.height // cfg.downsample, channel=3, 
+                        image_data=color_image.reshape(-1).tobytes()
+                    ))
 
 
 if __name__ == "__main__":
