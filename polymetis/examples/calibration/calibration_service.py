@@ -82,7 +82,7 @@ class CalibrationBackend:
             list_r_tcp = [pose[:3, :3] for pose in list_ee_pose]
             list_t_tcp = [pose[:3, 3:] for pose in list_ee_pose]
             r_gripper_cam, t_gripper_cam = cv2.calibrateHandEye(list_r_tcp, list_t_tcp, list_r_board, list_t_board)
-            gripper_T_cam = np.concatenate([np.concatenate([r_gripper_cam, t_gripper_cam], axis=-1), np.array([0., 0., 0., 1.])], axis=0)
+            gripper_T_cam = np.concatenate([np.concatenate([r_gripper_cam, t_gripper_cam], axis=-1), np.array([[0., 0., 0., 1.]])], axis=0)
             return gripper_T_cam
         else:
             # eye on base
@@ -90,18 +90,19 @@ class CalibrationBackend:
             inv_list_r_tcp = [pose[:3, :3] for pose in inv_list_ee_pose]
             inv_list_t_tcp = [pose[:3, 3:] for pose in inv_list_ee_pose]
             r_base_cam, t_base_cam = cv2.calibrateHandEye(inv_list_r_tcp, inv_list_t_tcp, list_r_board, list_t_board)
-            base_T_cam = np.concatenate([np.concatenate([r_base_cam, t_base_cam], axis=-1), np.array([0., 0., 0., 1.])], axis=0)
+            base_T_cam = np.concatenate([np.concatenate([r_base_cam, t_base_cam], axis=-1), np.array([[0., 0., 0., 1.]])], axis=0)
             return base_T_cam
 
-    def draw_markers(self, image, marker_corners, charuco_corners=None):
+    def draw_markers(self, image, marker_corners=None, charuco_corners=None):
         image = image.copy().astype(np.uint8)
-        for i in range(len(marker_corners)):
-            xys = marker_corners[i]
-            for j in range(xys.shape[0]):
-                image[
-                    max(int(xys[j][1]) - 1, 0): min(int(xys[j][1]) + 2, image.shape[0]), 
-                    max(int(xys[j][0]) - 1, 0): min(int(xys[j][0]) + 2, image.shape[1])
-                ] = np.array([255, 0, 0], dtype=np.uint8)
+        if marker_corners is not None:
+            for i in range(len(marker_corners)):
+                xys = marker_corners[i]
+                for j in range(xys.shape[0]):
+                    image[
+                        max(int(xys[j][1]) - 1, 0): min(int(xys[j][1]) + 2, image.shape[0]), 
+                        max(int(xys[j][0]) - 1, 0): min(int(xys[j][0]) + 2, image.shape[1])
+                    ] = np.array([255, 0, 0], dtype=np.uint8)
         if charuco_corners is not None:
             for i in range(len(charuco_corners)):
                 image[int(charuco_corners[i][1]), int(charuco_corners[i][0])] = np.array([0, 255, 0], dtype=np.uint8)
@@ -193,23 +194,34 @@ class CalibrationService:
                 print(f"Calibration result saved to {save_path}")
 
     def visualize_loop(self):
-        fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+        fig, ax = plt.subplots(1, 2, figsize=(18, 8))
         while True:
             if not self.capture_image_lock:
                 image, stamp = self.camera_interface.read_once()
-                marker_corners, marker_ids, charuco_corners, charuco_ids, board_rvec, board_tvec = self.calibration_backend.detect(image)
-                # self.current_image_and_feature = (image, charuco_corners, charuco_ids, board_rvec, board_tvec)
-                self.current_image_and_feature.update(
-                  dict(
-                      image=image, charuco_corners=charuco_corners, charuco_ids=charuco_ids,
-                      board_rvec=board_rvec, board_tvec=board_tvec,
-                  )  
-                )
+                try:
+                    marker_corners, marker_ids, charuco_corners, charuco_ids, board_rvec, board_tvec = self.calibration_backend.detect(image)
+                    # self.current_image_and_feature = (image, charuco_corners, charuco_ids, board_rvec, board_tvec)
+                    self.current_image_and_feature.update(
+                        dict(
+                            image=image, charuco_corners=charuco_corners, charuco_ids=charuco_ids,
+                            board_rvec=board_rvec, board_tvec=board_tvec,
+                        )  
+                    )
+                except RuntimeError:
+                    # new_image = self.calibration_backend.draw_markers(image)
+                    # ax[0].cla()
+                    # ax[0].imshow(new_image)
+                    # ax[0].set_title(stamp)
+                    # ax[1].cla()
+                    # ax[1].imshow(self.merged_feature_image)
+                    # plt.pause(0.1)
+                    # continue
+                    marker_corners = charuco_corners = None
                 if self.robot_interface is not None:
                     ee_pos, ee_quat = self.robot_interface.get_ee_pose()
                     import torchcontrol.transform.rotation as rotation
                     ee_rot_mat = rotation.from_quat(ee_quat).as_matrix()
-                    ee_pose = np.concatenate([np.concatenate([ee_rot_mat.numpy(), ee_pos.numpy().reshape(3, 1)], axis=-1), np.array([0, 0, 0, 1])], axis=0)
+                    ee_pose = np.concatenate([np.concatenate([ee_rot_mat.numpy(), ee_pos.numpy().reshape(3, 1)], axis=-1), np.array([[0, 0, 0, 1]])], axis=0)
                     self.current_image_and_feature.update(
                         dict(
                             ee_pose=ee_pose
@@ -239,8 +251,11 @@ class CalibrationService:
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
         
+    def __del__(self):
+        # TODO: how to handle when the program exited with error
+        os.system("stty sane")
 
 if __name__ == "__main__":
-    calibrator = CalibrationService("localhost", calibration_type="intrinsic")
+    calibrator = CalibrationService("localhost", calibration_type="handeye")
     # calibrator = CalibrationService("101.6.103.171", calibration_type="handeye")
     calibrator.run()
