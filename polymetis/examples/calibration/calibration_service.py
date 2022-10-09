@@ -71,6 +71,7 @@ class CalibrationBackend:
             )
         return reproj_error, new_cam_matrix, new_dist_coeffs
     
+    # TODO: try to measure error
     def calibrate_handeye(
         self, list_ee_pose: List[np.ndarray], 
         list_r_board: List[np.ndarray], list_t_board: List[np.ndarray], eye_on_hand: bool
