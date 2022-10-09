@@ -4,6 +4,7 @@ import polymetis_pb2
 import polymetis_pb2_grpc
 import numpy as np
 import torch
+import cv2
 
 
 EMPTY = polymetis_pb2.Empty()
@@ -21,9 +22,11 @@ class CameraInterface:
         n_height = image.height
         n_channel = image.channel
         # convert bgr to rgb
-        image_data = np.array(image.image_data).reshape((n_height, n_width, n_channel)).astype(np.float32)
-        image_data[..., :3] = image_data[..., :3][..., ::-1]
+        image_data = np.frombuffer(image.image_data, dtype=np.uint8).reshape((n_height, n_width, 3)).astype(np.float32)
+        image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
         if n_channel == 4:
+            depth_data = np.frombuffer(image.depth_data, dtype=np.int16).reshape((n_height, n_width, 1)).astype(np.float32)
+            image_data = np.concatenate([image_data, depth_data], axis=-1)
             camera_metadata = self.stub.GetMetaData(EMPTY)
             depth_scale = camera_metadata.depth_scale
             image_data[..., -1] *= depth_scale

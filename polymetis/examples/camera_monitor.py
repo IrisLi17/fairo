@@ -15,7 +15,7 @@ if __name__ == "__main__":
         (image, timestamp) = camera.read_once()
         if n_channel == 3:
             ax.cla()
-            ax.imshow(image)
+            ax.imshow(image.astype(np.uint8))
             plt.pause(0.1)
             print(timestamp)
         else:
