@@ -1,3 +1,4 @@
+import argparse
 from collections import deque
 import time
 import threading
@@ -208,14 +209,6 @@ class CalibrationService:
                         )  
                     )
                 except RuntimeError:
-                    # new_image = self.calibration_backend.draw_markers(image)
-                    # ax[0].cla()
-                    # ax[0].imshow(new_image)
-                    # ax[0].set_title(stamp)
-                    # ax[1].cla()
-                    # ax[1].imshow(self.merged_feature_image)
-                    # plt.pause(0.1)
-                    # continue
                     marker_corners = charuco_corners = None
                 if self.robot_interface is not None:
                     ee_pos, ee_quat = self.robot_interface.get_ee_pose()
@@ -256,6 +249,10 @@ class CalibrationService:
         os.system("stty sane")
 
 if __name__ == "__main__":
-    calibrator = CalibrationService("localhost", calibration_type="handeye")
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--ip", default="localhost", type=str)
+    parser.add_argument("--calibration_type", default="handeye", choices=["handeye", "intrinsic"])
+    args = parser.parse_args()
+    calibrator = CalibrationService(args.ip, calibration_type=args.calibration_type)
     # calibrator = CalibrationService("101.6.103.171", calibration_type="handeye")
     calibrator.run()
