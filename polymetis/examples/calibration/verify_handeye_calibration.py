@@ -34,7 +34,7 @@ def main(args):
                 [rotation.from_quat(link_quat).as_matrix().numpy(), link_pos.reshape(3, 1).numpy()], axis=-1), 
             np.array([[0., 0., 0., 1.]])], axis=0
         )
-        r = 0.1  # TODO
+        r = 0.03  # TODO
         flange_local_points = np.array(
             [[r * np.cos(i * 2 * np.pi / 24), r * np.sin(i * 2 * np.pi / 24)] for i in range(24)]
         )
@@ -45,11 +45,13 @@ def main(args):
         )
         cam_flange_points = np.transpose(cam_flange_points[:3])
         image_points, _ = cv2.projectPoints(cam_flange_points, np.array([0., 0., 0.]), np.array([0., 0., 0.]), camera_matrix, dist_coeffs)
+        image_points = np.squeeze(image_points, axis=1)
         # Overlay to original image
         image = image.astype(np.uint8)
         for i in range(len(image_points)):
             x, y = int(image_points[i][0]), int(image_points[i][1])
-            image[max(y - 1, 0): min(y + 2, image.shape[0]), max(x - 1, 0): min(x + 2, image.shape[1])] = np.array([255, 0, 0], dtype=np.uint8)
+            image[min(max(y - 1, 0), image.shape[0]): min(max(y + 2, 0), image.shape[0]), 
+                  min(max(x - 1, 0), image.shape[1]): min(max(x + 2, 0), image.shape[1])] = np.array([255, 0, 0], dtype=np.uint8)
         ax.cla()
         ax.imshow(image)
         plt.pause(0.01)
