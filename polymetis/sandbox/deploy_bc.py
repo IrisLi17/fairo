@@ -1,0 +1,80 @@
+from polymetis import RobotInterface, GripperInterface, CameraInterface
+from bc.bc_network import FCNetwork, EncoderFCNetwork
+from r3m import load_r3m
+import torchcontrol.transform.rotation as rotation
+
+import numpy as np
+from PIL import Image
+import threading
+import time
+import torch
+import torchvision.transforms as T
+
+
+class NeuralController:
+    def __init__(self, ip_address="localhost", model_path=None) -> None:
+        self.robot_interface = RobotInterface(ip_address=ip_address)
+        self.camera_interface = CameraInterface(ip_address=ip_address)
+        self.gripper_interface = GripperInterface(ip_address=ip_address)
+        self.camera_thr = threading.Thread(target=self.camera_listener, daemon=True)
+        self.current_image: np.ndarray = None
+        self.read_image_lock = False
+        self.device = device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        encoder = load_r3m("resnet50")
+        encoder.to(device)
+        encoder.eval()
+        controller = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
+        controller.to(device)
+        controller.load_state_dict(torch.load(model_path, map_location=device))
+        controller.eval()
+        def _image_transform(raw_image: np.ndarray):
+            image = Image.fromarray(raw_image.astype(np.uint8))
+            fn = T.Compose([T.CenterCrop(224), T.ToTensor()])
+            image = fn(image)
+            image = image.reshape((-1, 3, 224, 224)).to(self.device) * 255.0
+            return image
+        self.deploy_policy = EncoderFCNetwork(encoder, controller, _image_transform)
+
+    def loop(self):
+        self.camera_thr.start()
+        self.robot_interface.go_home()
+        # TODO: sometimes communication errors occur
+        self.robot_interface.start_cartesian_impedance()
+        eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
+            rotation.from_quat(torch.Tensor([1.0, 0, 0, 0]))).as_quat()
+        for i in range(200):
+            self.read_image_lock = True
+            raw_image = self.current_image.copy()
+            self.read_image_lock = False
+            robot_state = self.robot_interface.get_robot_state()
+            gripper_state = self.gripper_interface.get_state()
+            joint_positions = torch.Tensor(robot_state.joint_positions).to(self.device)
+            eef_pos, _ = self.robot_interface.robot_model.forward_kinematics(joint_positions)
+            gripper_width = torch.Tensor([gripper_state.width]).to(self.device)
+            propriocep = torch.concat([joint_positions, eef_pos, gripper_width])
+            with torch.no_grad():
+                action = self.deploy_policy(raw_image, propriocep.unsqueeze(dim=0)).squeeze(dim=0)
+            print("action", action)
+            desired_eef_pos = eef_pos + action[:3]
+            # Safety clip
+            desired_eef_pos = torch.clamp(
+                desired_eef_pos, 
+                torch.Tensor([0.1, -0.35, 0.1]).to(self.device), 
+                torch.Tensor([0.7, 0.35, 0.7]).to(self.device)
+            ).cpu()
+            print("desired eef pos", desired_eef_pos, "eef quat", eef_quat)
+            self.robot_interface.update_desired_ee_pose(desired_eef_pos, eef_quat)
+            time.sleep(0.2)
+
+    def camera_listener(self):
+        while True:
+            if not self.read_image_lock:
+                image, stamp = self.camera_interface.read_once()
+                self.current_image = image
+            else:
+                time.sleep(0.1)
+
+
+if __name__ == "__main__":
+    neural_controller = NeuralController(ip_address="101.6.103.171", model_path="bc_model.pt")
+    neural_controller.loop()

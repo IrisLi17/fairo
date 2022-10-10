@@ -23,6 +23,20 @@ class FCNetwork(nn.Module):
         return out
 
 
+class EncoderFCNetwork(nn.Module):
+    def __init__(self, encode_fn: nn.Module, control_net: nn.Module, transform: lambda x: x) -> None:
+        super().__init__()
+        self.encode_fn = encode_fn
+        self.control_net = control_net
+        self.transform = transform
+    
+    def forward(self, image, x):
+        embed = self.encode_fn.forward(self.transform(image))
+        input = torch.cat([embed, x], dim=-1)
+        action = self.control_net.forward(input)
+        return action
+
+
 class GaussianMLP(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_sizes=(64, 64)) -> None:
         super().__init__()
