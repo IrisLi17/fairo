@@ -9,6 +9,8 @@ import torch
 import os
 import pickle
 import matplotlib.pyplot as plt
+import numpy as np
+import torchcontrol.transform.rotation as rotation
 
 
 class DemoCollector:
@@ -51,11 +53,14 @@ class DemoCollector:
             image, timestamp = self.camera.read_once()
             self._image_buffer.append((image, timestamp))
             ax.cla()
-            ax.imshow(image)
+            ax.imshow(image.astype(np.uint8))
             ax.set_title(timestamp)
             plt.pause(0.01)
         
     def _keyboard_listener(self):
+        eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
+            rotation.from_quat(torch.Tensor([1.0, 0, 0, 0]))).as_quat()
+        print("EEF quat", eef_quat)
         while True:
             keyname = self._getkey()
             print(keyname, "pressed")
@@ -63,27 +68,35 @@ class DemoCollector:
                 record_obj = dict()
                 robot_state = self.robot.get_robot_state()
                 gripper_state = self.gripper.get_state()
-                camera_image, timestamp = self._image_buffer.pop()
-                eef_pos, eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))
-                print("EEF quat", eef_quat)
+                try:
+                    camera_image, timestamp = self._image_buffer.pop()
+                except:
+                    continue
+                eef_pos, init_eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))
+                # Parse rpy from eef_quat, roll = 180deg, pitch = 0deg, yaw=?
+                # eef_roll, eef_pitch, eef_yaw = quat2euler(eef_quat)
+                # eef_quat = euler2quat(torch.Tensor([torch.pi, 0., eef_yaw]))
                 if keyname == "a":
                     eef_pos = eef_pos + torch.Tensor([0.01, 0.0, 0.0])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "d":
                     eef_pos = eef_pos + torch.Tensor([-0.01, 0.0, 0.0])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "w":
                     eef_pos = eef_pos + torch.Tensor([0.0, 0.01, 0.0])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "s":
                     eef_pos = eef_pos + torch.Tensor([0.0, -0.01, 0.0])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "i":
                     eef_pos = eef_pos + torch.Tensor([0.0, 0.0, 0.01])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "k":
                     eef_pos = eef_pos + torch.Tensor([0.0, 0.0, -0.01])
-                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=self.robot_initial_quat)
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
+                # elif keyname == ",":
+                #     eef_quat = euler2quat(torch.Tensor([torch.pi, 0, eef_yaw + 0.1 * torch.pi]))
+                #     self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
                 elif keyname == "space":
                     if not gripper_state.is_moving:
                         if gripper_state.is_grasped:
@@ -116,6 +129,8 @@ class DemoCollector:
                 else:
                     k = ord(b)
                 return self.KEY_MAPPINGS.get(k, chr(k))
+        except:
+            return None
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
