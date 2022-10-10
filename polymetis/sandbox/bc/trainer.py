@@ -49,19 +49,36 @@ class BehaviorCloning:
                     pbar.set_postfix(loss=loss.item())
                     pbar.update(1)
                     losses.append(loss.item())
-                    all_losses.append(np.mean(losses))
+                    if len(losses) >= 10:
+                        all_losses.append(np.mean(losses))
         import matplotlib.pyplot as plt
         plt.plot(all_losses)
         plt.savefig("figure1.png")
         torch.save(self.policy.state_dict(), "bc_model.pt")
         print("Model saved to", "bc_model.pt")
     
-    def parse_demo(self, demo_paths: List[str]):
+    def evaluate(self, demo_paths: List[str]):
+        dataset = self.parse_demo(demo_paths)
+        observations = dataset["observation"]
+        self.policy.eval()
+        with torch.no_grad():
+            pred = self.policy(observations)
+        gt = dataset["action"]
+        print(torch.abs(pred - gt))
+        abs_error = torch.abs(pred - gt)
+        return torch.max(abs_error), torch.mean(abs_error)
+        
+    def parse_demo(self, demo_paths: List[str], save_image=False):
         transform = T.Compose([T.CenterCrop(224), T.ToTensor()])
         robot_model = toco.models.RobotModelPinocchio(
             "/home/yunfei/projects/fairo/polymetis/polymetis/data/franka_panda/panda_arm.urdf", "panda_link8"
         )
         all_obs, all_actions = [], []
+        if save_image:
+            import os
+            import matplotlib.pyplot as plt
+            os.makedirs("tmp")
+            count = 0
         for file_name in demo_paths:
             print(f"Parsing {file_name}")
             with open(file_name, "rb") as f:
@@ -72,6 +89,9 @@ class BehaviorCloning:
                         break
                     image = transform(Image.fromarray(data["image"].astype(np.uint8)))
                     image = image.reshape((-1, 3, 224, 224)).to(self.device)
+                    if save_image:
+                        plt.imsave("tmp/img%d.png" % count, image[0].permute(1, 2, 0).cpu().numpy())
+                        count += 1
                     with torch.no_grad():
                         image_embedding = self.encode_fn(image * 255.0).squeeze(dim=0)
                     robot_state = data["robot_state"]
