@@ -22,6 +22,7 @@ class BehaviorCloning:
         else:
             raise NotImplementedError
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+        self.eef_scale = 0.01
     
     def train(self, demo_paths: List[str], num_epochs=10, batch_size=32):
         expert_demos = self.parse_demo(demo_paths)
@@ -54,7 +55,11 @@ class BehaviorCloning:
         import matplotlib.pyplot as plt
         plt.plot(all_losses)
         plt.savefig("figure1.png")
-        torch.save(self.policy.state_dict(), "bc_model.pt")
+        save_obj = dict(
+            model=self.policy.state_dict(),
+            eef_scale=self.eef_scale
+        )
+        torch.save(save_obj, "bc_model.pt")
         print("Model saved to", "bc_model.pt")
     
     def evaluate(self, demo_paths: List[str]):
@@ -109,6 +114,7 @@ class BehaviorCloning:
                         action = torch.concat([desired_eef_pos - eef_pos, torch.ones(1, device=self.device)])
                     elif desired_gripper == "close":
                         action = torch.concat([desired_eef_pos - eef_pos, -torch.ones(1, device=self.device)])
+                    action[:3] /= self.eef_scale
                     all_obs.append(observation)
                     all_actions.append(action)
         dataset = dict(

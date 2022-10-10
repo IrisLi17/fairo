@@ -25,8 +25,10 @@ class NeuralController:
         encoder.eval()
         controller = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
         controller.to(device)
-        controller.load_state_dict(torch.load(model_path, map_location=device))
+        save_obj = torch.load(model_path, map_location=device)
+        controller.load_state_dict(save_obj["model"])
         controller.eval()
+        self.eef_scale = save_obj["eef_scale"]
         def _image_transform(raw_image: np.ndarray):
             image = Image.fromarray(raw_image.astype(np.uint8))
             fn = T.Compose([T.CenterCrop(224), T.ToTensor()])
@@ -55,7 +57,7 @@ class NeuralController:
             with torch.no_grad():
                 action = self.deploy_policy(raw_image, propriocep.unsqueeze(dim=0)).squeeze(dim=0)
             print("action", action)
-            desired_eef_pos = eef_pos + action[:3]
+            desired_eef_pos = eef_pos + action[:3] * self.eef_scale
             # Safety clip
             desired_eef_pos = torch.clamp(
                 desired_eef_pos, 

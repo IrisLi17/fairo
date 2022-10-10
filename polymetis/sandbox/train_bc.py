@@ -13,15 +13,16 @@ def main(args):
     encode_fn.to(device)
     control_net.to(device)
     encode_fn.eval()
-    trainer = BehaviorCloning(control_net, encode_fn, device, lr=1e-3)
+    trainer = BehaviorCloning(control_net, encode_fn, device, lr=3e-4)
     expert_demos = []
     for i in range(5):
         expert_demos.append(os.path.join(os.path.dirname(__file__), "..", f"demo_push{i+1}.pkl"))
     if not args.eval:
-        trainer.train(expert_demos, num_epochs=100, batch_size=32)
+        trainer.train(expert_demos, num_epochs=500, batch_size=32)
     else:
-        control_net.load_state_dict(torch.load(args.model_path, map_location=device))
-        max_error, mean_error = trainer.evaluate(expert_demos[0: 1])
+        save_obj = torch.load(args.model_path, map_location=device)
+        control_net.load_state_dict(save_obj["model"])
+        max_error, mean_error = trainer.evaluate(expert_demos[1: 2])
         print("max error", max_error, "mean error", mean_error)
 
 if __name__ == "__main__":
