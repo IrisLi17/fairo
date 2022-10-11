@@ -1,8 +1,8 @@
 import shutil
-from bc.bc_network import FCNetwork
+from bc.bc_network import FCNetwork, DiscreteNetwork
 
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Union
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -14,14 +14,10 @@ from collections import deque
 
 
 class BehaviorCloning:
-    def __init__(self, policy: FCNetwork, encode_fn: nn.Module, device, loss="mse", lr=1e-3) -> None:
+    def __init__(self, policy: Union[FCNetwork, DiscreteNetwork], encode_fn: nn.Module, device, lr=1e-3) -> None:
         self.policy = policy
         self.encode_fn = encode_fn
         self.device = device
-        if loss == "mse":
-            self.criterion = nn.MSELoss()
-        else:
-            raise NotImplementedError
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
         self.eef_scale = 0.01
     
@@ -43,7 +39,7 @@ class BehaviorCloning:
                     # mb_input = torch.concat([mb_embed, mb_obs], dim=-1)
                     mb_input = expert_demos["observation"][rand_idx]
                     mb_action = expert_demos["action"][rand_idx]
-                    loss = self.criterion(self.policy(mb_input), mb_action.detach())
+                    loss = self.policy.get_loss(mb_input, mb_action)
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -120,6 +116,9 @@ class BehaviorCloning:
                     action[:3] /= self.eef_scale
                     all_obs.append(observation)
                     all_actions.append(action)
+            # for i in range(len(all_obs) - 1):
+            #     # print(torch.norm(all_obs[i][:2048] - all_obs[-1][:2048]))
+            #     print(torch.sum(all_obs[i][:2048] * all_obs[-1][:2048]) / (torch.norm(all_obs[i][:2048]) * torch.norm(all_obs[-1][:2048])))
         dataset = dict(
             observation=torch.stack(all_obs).float(),
             action=torch.stack(all_actions).float()

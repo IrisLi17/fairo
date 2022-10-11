@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.distributions import Categorical
 import numpy as np
 
 
@@ -13,6 +14,7 @@ class FCNetwork(nn.Module):
             [nn.Linear(hidden_sizes[-1], act_dim)]
         )
         self.act_fn = nn.Tanh()
+        self.criterion = nn.MSELoss()
     
     def forward(self, x):
         # out = self.bn(x)
@@ -21,6 +23,51 @@ class FCNetwork(nn.Module):
             out = self.act_fn(self.linear_layers[i](out))
         out = self.linear_layers[-1](out)
         return out
+    
+    def get_loss(self, x: torch.Tensor, action: torch.Tensor):
+        return self.criterion(self.forward(x), action.detach())
+
+class DiscreteNetwork(nn.Module):
+    def __init__(self, obs_dim, act_dim=(3, 3, 3, 3), hidden_sizes=(64, 64)) -> None:
+        super().__init__()
+        self.linear_layers = nn.ModuleList(
+            [nn.Linear(obs_dim, hidden_sizes[0])] + \
+            [nn.Linear(hidden_sizes[i], hidden_sizes[i + 1]) for i in range(len(hidden_sizes) - 1)]
+        )
+        self.action_head = nn.ModuleList(
+            [nn.Linear(hidden_sizes[-1], act_dim[i]) for i in range(len(act_dim))]
+        )
+        self.act_fn = nn.Tanh()
+        self.action_dim = act_dim
+    
+    def _get_logits(self, x):
+        out = x
+        for i in range(len(self.linear_layers)):
+            out = self.act_fn(self.linear_layers[i](out))
+        action_logits = []
+        for i in range(len(self.action_head)):
+            _logit = self.action_head[i](out)
+            action_logits.append(_logit)
+        return action_logits # a list of length num_action, each of size (batch_size, action_dim[i]) 
+
+    def forward(self, x):
+        action_logits = self._get_logits(x)
+        action = torch.stack([
+            2 * torch.argmax(action_logits[i], dim=-1).float() / (self.action_dim[i] - 1) - 1 for i in range(len(action_logits))
+        ], dim=-1)
+        return action
+    
+    def get_loss(self, x, action):
+        action_logits = self._get_logits(x)
+        action_dists = [Categorical(logits=logit) for logit in action_logits]
+        action_probs = [nn.functional.softmax(logit, dim=-1) for logit in action_logits]
+        log_probs = []
+        for i in range(len(action_probs)):
+            action_idx = torch.round((action[:, i] + 1) / 2 * (self.action_dim[i] - 1)).long()
+            log_probs.append(action_dists[i].log_prob(action_idx))
+            # log_probs.append(torch.log(action_probs[i][action_idx]))
+        log_probs = torch.stack(log_probs, dim=0).sum(dim=0)
+        return -log_probs.mean()
 
 
 class EncoderFCNetwork(nn.Module):

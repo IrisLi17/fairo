@@ -1,5 +1,5 @@
 import argparse
-from bc.bc_network import FCNetwork
+from bc.bc_network import FCNetwork, DiscreteNetwork
 from bc.trainer import BehaviorCloning
 from r3m import load_r3m
 import os
@@ -8,7 +8,8 @@ import torch
 
 def main(args):
     encode_fn = load_r3m("resnet50")
-    control_net = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
+    # control_net = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
+    control_net = DiscreteNetwork(obs_dim=2048 + 11, act_dim=(3, 3, 3, 3), hidden_sizes=(256, 256))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encode_fn.to(device)
     control_net.to(device)
@@ -16,7 +17,7 @@ def main(args):
     trainer = BehaviorCloning(control_net, encode_fn, device, lr=3e-4)
     expert_demos = []
     for i in range(5):
-        expert_demos.append(os.path.join(os.path.dirname(__file__), "..", f"demo_pushmark{i+1}.pkl"))
+        expert_demos.append(os.path.join("/home/yunfei/Documents/demos", f"demo_pick{i+1}.pkl"))
     if not args.eval:
         trainer.train(expert_demos, num_epochs=500, batch_size=32)
     else:
