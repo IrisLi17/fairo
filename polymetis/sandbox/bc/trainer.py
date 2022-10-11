@@ -1,3 +1,4 @@
+import shutil
 from bc.bc_network import FCNetwork
 
 import numpy as np
@@ -69,7 +70,7 @@ class BehaviorCloning:
         with torch.no_grad():
             pred = self.policy(observations)
         gt = dataset["action"]
-        print(torch.abs(pred - gt))
+        print("pred and gt", torch.cat([pred, gt], dim=-1), "error", torch.abs(pred - gt))
         abs_error = torch.abs(pred - gt)
         return torch.max(abs_error), torch.mean(abs_error)
         
@@ -82,6 +83,8 @@ class BehaviorCloning:
         if save_image:
             import os
             import matplotlib.pyplot as plt
+            if os.path.exists("tmp"):
+                shutil.rmtree("tmp")
             os.makedirs("tmp")
             count = 0
         for file_name in demo_paths:
