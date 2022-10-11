@@ -25,7 +25,7 @@ class BehaviorCloning:
         self.eef_scale = 0.01
     
     def train(self, demo_paths: List[str], num_epochs=10, batch_size=32):
-        expert_demos = self.parse_demo(demo_paths)
+        expert_demos = self.parse_demo(demo_paths, save_image=True)
         num_samples = len(expert_demos["observation"])
         indices = np.arange(num_samples)
         losses = deque(maxlen=10)

@@ -16,7 +16,7 @@ def main(args):
     trainer = BehaviorCloning(control_net, encode_fn, device, lr=3e-4)
     expert_demos = []
     for i in range(5):
-        expert_demos.append(os.path.join(os.path.dirname(__file__), "..", f"demo_push{i+1}.pkl"))
+        expert_demos.append(os.path.join(os.path.dirname(__file__), "..", f"demo_pushmark{i+1}.pkl"))
     if not args.eval:
         trainer.train(expert_demos, num_epochs=500, batch_size=32)
     else:
