@@ -1,3 +1,4 @@
+import argparse
 from polymetis import RobotInterface, GripperInterface, CameraInterface
 from bc.bc_network import FCNetwork, EncoderFCNetwork
 from r3m import load_r3m
@@ -78,5 +79,8 @@ class NeuralController:
 
 
 if __name__ == "__main__":
-    neural_controller = NeuralController(ip_address="101.6.103.171", model_path="bc_model.pt")
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--model_path", type=str, default=None)
+    args = parser.parse_args()
+    neural_controller = NeuralController(ip_address="101.6.103.171", model_path=args.model_path)
     neural_controller.loop()
