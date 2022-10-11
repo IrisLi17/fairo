@@ -112,7 +112,7 @@ class DemoCollector:
                 # Save
                 with open("demo.pkl", "ab") as f:
                     record_obj.update(dict(
-                        robot_state=robot_state, gripper_state=gripper_state, image=camera_image, 
+                        robot_state=robot_state, gripper_state=gripper_state, image=camera_image.astype(np.uint8), 
                         desired_eef_pos=eef_pos, desired_eef_quat=eef_quat
                     ))
                     pickle.dump(record_obj, f)
