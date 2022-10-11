@@ -57,7 +57,7 @@ class NeuralController:
             propriocep = torch.concat([joint_positions, eef_pos, gripper_width])
             with torch.no_grad():
                 action = self.deploy_policy(raw_image, propriocep.unsqueeze(dim=0)).squeeze(dim=0)
-            print("action", action)
+            print(i, "action", action)
             desired_eef_pos = eef_pos + action[:3] * self.eef_scale
             # Safety clip
             desired_eef_pos = torch.clamp(
@@ -67,7 +67,13 @@ class NeuralController:
             ).cpu()
             print("desired eef pos", desired_eef_pos, "eef quat", eef_quat)
             self.robot_interface.update_desired_ee_pose(desired_eef_pos, eef_quat)
-            time.sleep(0.2)
+            if abs(action[3].item()) > 0.5:
+                if action[3].item() > 0:
+                    self.gripper_interface.goto(0.08, 0.1, 1)
+                else:
+                    self.gripper_interface.grasp(0.1)
+                time.sleep(1)
+            time.sleep(0.5)
 
     def camera_listener(self):
         while True:
