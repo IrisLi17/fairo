@@ -86,12 +86,22 @@ class DemoCollector:
             eef_pos, init_eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))    
             for event in events:
                 if event.type == pygame.JOYAXISMOTION:
+                    cur_value = event.value if abs(event.value) > 0.5 else 0
                     if event.axis == 3:
-                        dy = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                        if event.value > 0:
+                            dy = max(dy, 0.01 * cur_value)
+                        else:
+                            dy = min(dy, 0.01 * cur_value)
                     elif event.axis == 4:
-                        dx = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                        if event.value > 0:
+                            dx = max(dx, 0.01 * cur_value)
+                        else:
+                            dx = min(dx, 0.01 * cur_value)
                     elif event.axis == 1:
-                        dz = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                        if event.value > 0:
+                            dz = max(dz, 0.01 * cur_value)
+                        else:
+                            dz = min(dz, 0.01 * cur_value)
                 elif event.type == pygame.JOYBUTTONDOWN:
                     if event.button == 4:
                         if not gripper_state.is_moving:
