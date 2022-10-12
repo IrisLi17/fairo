@@ -11,6 +11,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import torchcontrol.transform.rotation as rotation
+import pygame
 
 
 class DemoCollector:
@@ -30,11 +31,18 @@ class DemoCollector:
             ip_address=ip_address
         )
         self._image_buffer = deque(maxlen=1)
-        self._keyboard_thr = threading.Thread(
-            target=self._keyboard_listener,
-            daemon=True,
+
+        # self._keyboard_thr = threading.Thread(
+        #     target=self._keyboard_listener,
+        #     daemon=True,
+        # )
+        pygame.init()
+        self.joystick = pygame.joystick.Joystick(0)
+        self.joystick.init()
+        self._control_thr = threading.Thread(
+            target=self._joystick_listener, daemon=True
         )
-        
+
     def run(self, demo_path="demo.pkl"):
         if os.path.exists(demo_path):
             ans = input(demo_path + " exists, going to remove? [y]")
@@ -45,7 +53,8 @@ class DemoCollector:
         self.robot.go_home()
         self.robot_initial_quat = self.robot.get_ee_pose()[1]
         self.robot.start_cartesian_impedance()
-        self._keyboard_thr.start()
+        # self._keyboard_thr.start()
+        self._control_thr.start()
         # self._command_thr.start()
         fig, ax = plt.subplots(1, 1)
         print("Listening keyboard events")
@@ -57,6 +66,60 @@ class DemoCollector:
             ax.set_title(timestamp)
             plt.pause(0.01)
         
+    def _joystick_listener(self):
+        eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
+            rotation.from_quat(torch.Tensor([1.0, 0, 0, 0]))).as_quat()
+        print("EEF quat", eef_quat)
+        while True:
+            dx, dy, dz = 0., 0., 0.
+            gripper_open, gripper_close = False, False
+            events = pygame.event.get([pygame.JOYAXISMOTION, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION])
+            if len(events) == 0:
+                continue
+            record_obj = dict()
+            robot_state = self.robot.get_robot_state()
+            gripper_state = self.gripper.get_state()
+            try:
+                camera_image, timestamp = self._image_buffer.pop()
+            except:
+                continue
+            eef_pos, init_eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))    
+            for event in events:
+                if event.type == pygame.JOYAXISMOTION:
+                    if event.axis == 3:
+                        dy = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                    elif event.axis == 4:
+                        dx = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                    elif event.axis == 1:
+                        dz = 0.01 * event.value if abs(event.value) > 0.5 else 0.
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if event.button == 4:
+                        if not gripper_state.is_moving:
+                            if gripper_state.is_grasped:
+                                gripper_open = True
+                            else:
+                                gripper_close = True
+            if gripper_open:
+                self.gripper.goto(0.08, 0.1, 1)
+                record_obj["desired_gripper"] = "open"
+            elif gripper_close:
+                self.gripper.grasp(0.1, 1)
+                record_obj["desired_gripper"] = "close"
+            elif abs(dx) > 0 or abs(dy) > 0 or abs(dz) > 0:
+                eef_pos = eef_pos + torch.Tensor([dx, dy, dz])
+                self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
+            else:
+                # No robot motion
+                continue
+            # Save
+            with open("demo.pkl", "ab") as f:
+                record_obj.update(dict(
+                    robot_state=robot_state, gripper_state=gripper_state, image=camera_image.astype(np.uint8), 
+                    desired_eef_pos=eef_pos, desired_eef_quat=eef_quat
+                ))
+                pickle.dump(record_obj, f)
+                print("Demo saved")
+
     def _keyboard_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
             rotation.from_quat(torch.Tensor([1.0, 0, 0, 0]))).as_quat()
@@ -136,5 +199,8 @@ class DemoCollector:
 
 
 if __name__ == "__main__":
-    demo_controller = DemoCollector(ip_address="101.6.103.171")
+    if len(sys.argv) < 2:
+        print("Usage: python examples/5_collect_demo.py [ip]")
+    ip = sys.argv[1]
+    demo_controller = DemoCollector(ip_address=ip)
     demo_controller.run()
