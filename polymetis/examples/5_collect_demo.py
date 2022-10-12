@@ -1,6 +1,7 @@
 from collections import deque
 from polymetis import RobotInterface, GripperInterface, CameraInterface
 import polymetis_pb2
+import grpc
 import termios, tty, sys
 import queue
 import threading
@@ -31,6 +32,7 @@ class DemoCollector:
             ip_address=ip_address
         )
         self._image_buffer = deque(maxlen=1)
+        self.read_image_lock = False
 
         # self._keyboard_thr = threading.Thread(
         #     target=self._keyboard_listener,
@@ -42,6 +44,8 @@ class DemoCollector:
         self._control_thr = threading.Thread(
             target=self._joystick_listener, daemon=True
         )
+        # TODO: move joystick get events to a separate thread.
+        # TODO: try to get rid of matplotlib
 
     def run(self, demo_path="demo.pkl"):
         if os.path.exists(demo_path):
@@ -59,12 +63,15 @@ class DemoCollector:
         fig, ax = plt.subplots(1, 1)
         print("Listening keyboard events")
         while True:
-            image, timestamp = self.camera.read_once()
-            self._image_buffer.append((image, timestamp))
-            ax.cla()
-            ax.imshow(image.astype(np.uint8))
-            ax.set_title(timestamp)
-            plt.pause(0.01)
+            if not self.read_image_lock:
+                image, timestamp = self.camera.read_once()
+                self._image_buffer.append((image, timestamp))
+                ax.cla()
+                ax.imshow(image.astype(np.uint8))
+                ax.set_title(timestamp)
+                plt.pause(0.01)
+            else:
+                time.sleep(0.1)            
         
     def _joystick_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
@@ -79,10 +86,15 @@ class DemoCollector:
             record_obj = dict()
             robot_state = self.robot.get_robot_state()
             gripper_state = self.gripper.get_state()
+            self.read_image_lock = True
             try:
                 camera_image, timestamp = self._image_buffer.pop()
             except:
+                print("no camera image")
+                self.read_image_lock = False
+                time.sleep(0.1)
                 continue
+            self.read_image_lock = False
             eef_pos, init_eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))    
             for event in events:
                 if event.type == pygame.JOYAXISMOTION:
@@ -117,9 +129,14 @@ class DemoCollector:
                 record_obj["desired_gripper"] = "close"
             elif abs(dx) > 0 or abs(dy) > 0 or abs(dz) > 0:
                 eef_pos = eef_pos + torch.Tensor([dx, dy, dz])
-                self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
+                try:
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
+                except grpc.RpcError:
+                    self.robot.start_cartesian_impedance()
+                    self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
             else:
                 # No robot motion
+                time.sleep(0.1)
                 continue
             # Save
             with open("demo.pkl", "ab") as f:
@@ -129,6 +146,7 @@ class DemoCollector:
                 ))
                 pickle.dump(record_obj, f)
                 print("Demo saved")
+            time.sleep(0.5)
 
     def _keyboard_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
