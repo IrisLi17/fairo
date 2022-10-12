@@ -1,6 +1,6 @@
 import argparse
 from polymetis import RobotInterface, GripperInterface, CameraInterface
-from bc.bc_network import FCNetwork, EncoderFCNetwork
+from bc.bc_network import FCNetwork, EncoderFCNetwork, DiscreteNetwork
 from r3m import load_r3m
 import torchcontrol.transform.rotation as rotation
 
@@ -24,7 +24,8 @@ class NeuralController:
         encoder = load_r3m("resnet50")
         encoder.to(device)
         encoder.eval()
-        controller = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
+        # controller = FCNetwork(obs_dim=2048 + 11, act_dim=4, hidden_sizes=(256, 256))
+        controller = DiscreteNetwork(obs_dim=2048+11, act_dim=(3, 3, 3, 3), hidden_sizes=(256, 256))
         controller.to(device)
         save_obj = torch.load(model_path, map_location=device)
         controller.load_state_dict(save_obj["model"])
@@ -37,8 +38,11 @@ class NeuralController:
             image = image.reshape((-1, 3, 224, 224)).to(self.device) * 255.0
             return image
         self.deploy_policy = EncoderFCNetwork(encoder, controller, _image_transform)
+        self.record_image = False  # will consume much memory if set to true
+        self.replay_buffer = []
 
     def loop(self):
+        # TODO: multiple trajectories with human reset
         self.camera_thr.start()
         self.robot_interface.go_home()
         # TODO: sometimes communication errors occur
@@ -56,7 +60,8 @@ class NeuralController:
             gripper_width = torch.Tensor([gripper_state.width]).to(self.device)
             propriocep = torch.concat([joint_positions, eef_pos, gripper_width])
             with torch.no_grad():
-                action = self.deploy_policy(raw_image, propriocep.unsqueeze(dim=0)).squeeze(dim=0)
+                action, rl_obs, processed_image = self.deploy_policy(raw_image, propriocep.unsqueeze(dim=0))
+                action = action.squeeze(dim=0)
             print(i, "action", action)
             desired_eef_pos = eef_pos + action[:3] * self.eef_scale
             # Safety clip
@@ -71,8 +76,12 @@ class NeuralController:
                 if action[3].item() > 0:
                     self.gripper_interface.goto(0.08, 0.1, 1)
                 else:
-                    self.gripper_interface.grasp(0.1)
+                    self.gripper_interface.grasp(0.1, 1)
                 time.sleep(1)
+            transition = dict(obs=rl_obs.squeeze(dim=0), action=action)
+            if self.record_image:
+                transition["image"] = processed_image.squeeze(dim=0).cpu().numpy().astype(np.uint8)
+            self.replay_buffer.append(transition)
             time.sleep(0.5)
 
     def camera_listener(self):

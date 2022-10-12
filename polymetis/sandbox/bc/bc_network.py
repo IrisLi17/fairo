@@ -16,7 +16,7 @@ class FCNetwork(nn.Module):
         self.act_fn = nn.Tanh()
         self.criterion = nn.MSELoss()
     
-    def forward(self, x):
+    def forward(self, x, deterministic=True):
         # out = self.bn(x)
         out = x
         for i in range(len(self.linear_layers) - 1):
@@ -50,11 +50,16 @@ class DiscreteNetwork(nn.Module):
             action_logits.append(_logit)
         return action_logits # a list of length num_action, each of size (batch_size, action_dim[i]) 
 
-    def forward(self, x):
+    def forward(self, x, deterministic=True):
         action_logits = self._get_logits(x)
-        action = torch.stack([
-            2 * torch.argmax(action_logits[i], dim=-1).float() / (self.action_dim[i] - 1) - 1 for i in range(len(action_logits))
-        ], dim=-1)
+        action_dists = [Categorical(logits=logit) for logit in action_logits]
+        if not deterministic:
+            action = torch.stack([action_dists[i].sample().float() / (self.action_dim[i] - 1) for i in range(len(action_dists))], dim=-1)
+            action = 2 * action - 1
+        else:
+            action = torch.stack([
+                2 * torch.argmax(action_logits[i], dim=-1).float() / (self.action_dim[i] - 1) - 1 for i in range(len(action_logits))
+            ], dim=-1)
         return action
     
     def get_loss(self, x, action):
@@ -78,10 +83,11 @@ class EncoderFCNetwork(nn.Module):
         self.transform = transform
     
     def forward(self, image, x):
-        embed = self.encode_fn.forward(self.transform(image))
+        processed_image = self.transform(image)
+        embed = self.encode_fn.forward(processed_image)
         input = torch.cat([embed, x], dim=-1)
-        action = self.control_net.forward(input)
-        return action
+        action = self.control_net.forward(input, deterministic=False)
+        return action, input, processed_image
 
 
 class GaussianMLP(nn.Module):
