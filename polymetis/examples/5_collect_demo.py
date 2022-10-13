@@ -100,6 +100,7 @@ class DemoCollector:
                     self.robot.update_desired_ee_pose(eef_pos + command["delta_pos"], eef_quat)
             else:
                 raise NotImplementedError
+            time.sleep(0.5)
             self._command_queue.task_done()
             with open("demo.pkl", "ab") as f:
                 record_obj.update(dict(
@@ -108,7 +109,6 @@ class DemoCollector:
                 ))
                 pickle.dump(record_obj, f)
                 print("Demo saved")
-            time.sleep(0.5)
         
     def _camera_listener(self):
         old_timestampe = None
@@ -146,20 +146,26 @@ class DemoCollector:
                             dx = min(dx, 0.01 * cur_value)
                     elif event.axis == 1:
                         if event.value > 0:
-                            dz = max(dz, 0.01 * cur_value)
+                            dz = min(dz, -0.01 * cur_value)
                         else:
-                            dz = min(dz, 0.01 * cur_value)
+                            dz = max(dz, -0.01 * cur_value)
                 elif event.type == pygame.JOYBUTTONDOWN:
                     if event.button == 4:
                         # if not gripper_state.is_moving:
                         gripper_toggle = True
             if gripper_toggle:
-                self._command_queue.put({"type": "gripper_toggle"})
-                self._command_queue.join()
+                try:
+                    self._command_queue.put({"type": "gripper_toggle"}, block=False)
+                except queue.Full:
+                    pass
+                # self._command_queue.join()
             elif abs(dx) > 0 or abs(dy) > 0 or abs(dz) > 0:
                 delta_pos = torch.Tensor([dx, dy, dz])
-                self._command_queue.put({"type": "eef", "delta_pos": delta_pos})
-                self._command_queue.join()
+                try:
+                    self._command_queue.put({"type": "eef", "delta_pos": delta_pos}, block=False)
+                except queue.Full:
+                    pass
+                # self._command_queue.join()
 
     def _keyboard_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
