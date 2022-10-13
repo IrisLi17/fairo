@@ -1,6 +1,7 @@
 from collections import deque
 from polymetis import RobotInterface, GripperInterface, CameraInterface
 import polymetis_pb2
+import grpc
 import termios, tty, sys
 import queue
 import threading
@@ -12,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torchcontrol.transform.rotation as rotation
 import pygame
+import cv2
 
 
 class DemoCollector:
@@ -30,18 +32,20 @@ class DemoCollector:
         self.camera = CameraInterface(
             ip_address=ip_address
         )
+        
         self._image_buffer = deque(maxlen=1)
+        self.read_image_lock = False
+        self._camera_thr = threading.Thread(
+            target=self._camera_listener, daemon=True
+        )
 
-        # self._keyboard_thr = threading.Thread(
-        #     target=self._keyboard_listener,
-        #     daemon=True,
-        # )
         pygame.init()
         self.joystick = pygame.joystick.Joystick(0)
         self.joystick.init()
-        self._control_thr = threading.Thread(
+        self._joystick_thr = threading.Thread(
             target=self._joystick_listener, daemon=True
         )
+        self._command_queue = queue.Queue(maxsize=1)
 
     def run(self, demo_path="demo.pkl"):
         if os.path.exists(demo_path):
@@ -54,36 +58,79 @@ class DemoCollector:
         self.robot_initial_quat = self.robot.get_ee_pose()[1]
         self.robot.start_cartesian_impedance()
         # self._keyboard_thr.start()
-        self._control_thr.start()
+        self._camera_thr.start()
+        self._joystick_thr.start()
         # self._command_thr.start()
-        fig, ax = plt.subplots(1, 1)
-        print("Listening keyboard events")
-        while True:
-            image, timestamp = self.camera.read_once()
-            self._image_buffer.append((image, timestamp))
-            ax.cla()
-            ax.imshow(image.astype(np.uint8))
-            ax.set_title(timestamp)
-            plt.pause(0.01)
+        # fig, ax = plt.subplots(1, 1)
         
-    def _joystick_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
             rotation.from_quat(torch.Tensor([1.0, 0, 0, 0]))).as_quat()
         print("EEF quat", eef_quat)
         while True:
-            dx, dy, dz = 0., 0., 0.
-            gripper_open, gripper_close = False, False
-            events = pygame.event.get([pygame.JOYAXISMOTION, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION])
-            if len(events) == 0:
-                continue
             record_obj = dict()
+            self.read_image_lock = True
+            try:
+                camera_image, stamp = self._image_buffer.pop()
+            except:
+                self.read_image_lock = False
+                continue
+            self.read_image_lock = False
             robot_state = self.robot.get_robot_state()
             gripper_state = self.gripper.get_state()
-            try:
-                camera_image, timestamp = self._image_buffer.pop()
-            except:
-                continue
-            eef_pos, init_eef_quat = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions))    
+            command = self._command_queue.get()
+            if command["type"] == "gripper_toggle":
+                if not gripper_state.is_moving:
+                    if gripper_state.is_grasped or gripper_state.width < 1e-3:
+                        self.gripper.goto(0.08, 0.1, 1)
+                        record_obj["desired_gripper"] = "open"
+                    else:
+                        self.gripper.grasp(0.1, 1)
+                        record_obj["desired_gripper"] = "close"
+                else:
+                    # skip this command
+                    self._command_queue.task_done()
+                    continue
+            elif command["type"] == "eef":
+                eef_pos, _ = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions)) 
+                try:
+                    self.robot.update_desired_ee_pose(eef_pos + command["delta_pos"], eef_quat)
+                except grpc.RpcError as e:
+                    print(e)
+                    self.robot.start_cartesian_impedance()
+                    self.robot.update_desired_ee_pose(eef_pos + command["delta_pos"], eef_quat)
+            else:
+                raise NotImplementedError
+            self._command_queue.task_done()
+            with open("demo.pkl", "ab") as f:
+                record_obj.update(dict(
+                    robot_state=robot_state, gripper_state=gripper_state, image=camera_image.astype(np.uint8), 
+                    desired_eef_pos=eef_pos, desired_eef_quat=eef_quat, image_timestamp=stamp,
+                ))
+                pickle.dump(record_obj, f)
+                print("Demo saved")
+            time.sleep(0.5)
+        
+    def _camera_listener(self):
+        old_timestampe = None
+        while True:
+            if not self.read_image_lock:
+                image, timestamp = self.camera.read_once()
+                if timestamp != old_timestampe:
+                    self._image_buffer.append((image, timestamp))
+                    cv2.imshow(
+                        f"Video", 
+                        cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR)
+                    )
+                    cv2.waitKey(25)
+                    old_timestampe = timestamp
+            # else:
+            #     time.sleep(0.1)
+    
+    def _joystick_listener(self):
+        while True:
+            events = pygame.event.get([pygame.JOYAXISMOTION, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION])
+            dx, dy, dz = 0., 0., 0.
+            gripper_toggle = False
             for event in events:
                 if event.type == pygame.JOYAXISMOTION:
                     cur_value = event.value if abs(event.value) > 0.5 else 0
@@ -104,31 +151,15 @@ class DemoCollector:
                             dz = min(dz, 0.01 * cur_value)
                 elif event.type == pygame.JOYBUTTONDOWN:
                     if event.button == 4:
-                        if not gripper_state.is_moving:
-                            if gripper_state.is_grasped:
-                                gripper_open = True
-                            else:
-                                gripper_close = True
-            if gripper_open:
-                self.gripper.goto(0.08, 0.1, 1)
-                record_obj["desired_gripper"] = "open"
-            elif gripper_close:
-                self.gripper.grasp(0.1, 1)
-                record_obj["desired_gripper"] = "close"
+                        # if not gripper_state.is_moving:
+                        gripper_toggle = True
+            if gripper_toggle:
+                self._command_queue.put({"type": "gripper_toggle"})
+                self._command_queue.join()
             elif abs(dx) > 0 or abs(dy) > 0 or abs(dz) > 0:
-                eef_pos = eef_pos + torch.Tensor([dx, dy, dz])
-                self.robot.update_desired_ee_pose(position=eef_pos, orientation=eef_quat)
-            else:
-                # No robot motion
-                continue
-            # Save
-            with open("demo.pkl", "ab") as f:
-                record_obj.update(dict(
-                    robot_state=robot_state, gripper_state=gripper_state, image=camera_image.astype(np.uint8), 
-                    desired_eef_pos=eef_pos, desired_eef_quat=eef_quat
-                ))
-                pickle.dump(record_obj, f)
-                print("Demo saved")
+                delta_pos = torch.Tensor([dx, dy, dz])
+                self._command_queue.put({"type": "eef", "delta_pos": delta_pos})
+                self._command_queue.join()
 
     def _keyboard_listener(self):
         eef_quat = (rotation.from_quat(torch.Tensor([0, 0, np.sin(np.pi / 8), np.cos(np.pi / 8)])) * \
