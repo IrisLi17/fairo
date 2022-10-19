@@ -92,12 +92,13 @@ class DemoCollector:
                     continue
             elif command["type"] == "eef":
                 eef_pos, _ = self.robot.robot_model.forward_kinematics(torch.Tensor(robot_state.joint_positions)) 
+                eef_pos = eef_pos + command["delta_pos"]
                 try:
-                    self.robot.update_desired_ee_pose(eef_pos + command["delta_pos"], eef_quat)
+                    self.robot.update_desired_ee_pose(eef_pos, eef_quat)
                 except grpc.RpcError as e:
                     print(e)
                     self.robot.start_cartesian_impedance()
-                    self.robot.update_desired_ee_pose(eef_pos + command["delta_pos"], eef_quat)
+                    self.robot.update_desired_ee_pose(eef_pos, eef_quat)
             else:
                 raise NotImplementedError
             time.sleep(0.5)
@@ -133,7 +134,7 @@ class DemoCollector:
             gripper_toggle = False
             for event in events:
                 if event.type == pygame.JOYAXISMOTION:
-                    cur_value = event.value if abs(event.value) > 0.5 else 0
+                    cur_value = np.sign(event.value) if abs(event.value) > 0.5 else 0
                     if event.axis == 3:
                         if event.value > 0:
                             dy = max(dy, 0.01 * cur_value)
