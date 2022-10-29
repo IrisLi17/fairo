@@ -1,3 +1,4 @@
+import argparse
 from collections import deque
 from polymetis import RobotInterface, GripperInterface, CameraInterface
 import polymetis_pb2
@@ -14,6 +15,7 @@ import numpy as np
 import torchcontrol.transform.rotation as rotation
 import pygame
 import cv2
+from datetime import datetime
 
 
 class DemoCollector:
@@ -22,7 +24,7 @@ class DemoCollector:
         32: "space",
         27: "esc"
     }
-    def __init__(self, ip_address="localhost", save_file=True):
+    def __init__(self, ip_address="localhost", save_file=True, save_path=None):
         self.robot = RobotInterface(
             ip_address=ip_address
         )
@@ -34,6 +36,7 @@ class DemoCollector:
         )
         
         self.save_file = save_file
+        self.save_path = save_path
 
         self._image_buffer = deque(maxlen=1)
         self.read_image_lock = False
@@ -50,6 +53,11 @@ class DemoCollector:
             target=self._joystick_listener, daemon=True
         )
         self._command_queue = queue.Queue(maxsize=1)
+
+        if self.save_file:
+            assert self.save_path is not None
+            if not os.path.exists(self.save_path):
+                os.makedirs(self.save_path)
 
     def run(self, demo_path="demo.pkl"):
         if os.path.exists(demo_path):
@@ -123,7 +131,8 @@ class DemoCollector:
             if (torch.Tensor(robot_state.joint_positions) - old_robot_state[0]).abs().max() > 0.02 \
                 or abs(gripper_state.width - old_robot_state[1]) > 0.01:
                 if self.save_file:
-                    with open("demo.pkl", "ab") as f:
+                    date_time = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f")
+                    with open(os.path.join(self.save_path, "demo" + date_time + ".pkl"), "ab") as f:
                         record_obj.update(dict(
                             robot_state=robot_state, gripper_state=gripper_state, 
                             image=camera_image.astype(np.uint8) if camera_image.shape[2] == 3 else camera_image.astype(np.float32), 
@@ -281,8 +290,9 @@ class DemoCollector:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python examples/5_collect_demo.py [ip]")
-    ip = sys.argv[1]
-    demo_controller = DemoCollector(ip_address=ip, save_file=True)
+    arg_parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    arg_parser.add_argument("--ip", default="localhost", type=str)
+    arg_parser.add_argument("--save_path", default=None, type=str)
+    args = arg_parser.parse_args()
+    demo_controller = DemoCollector(ip_address=args.ip, save_file=True)
     demo_controller.run()
