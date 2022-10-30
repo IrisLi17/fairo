@@ -26,7 +26,7 @@ class ManualCalibrator:
             with open(calibration_file, "rb") as f:
                 calibration_result = pickle.load(f)
                 base_T_cam = calibration_result["base_T_cam"]  
-        elif calibration_file.endswith(".yml"):
+        elif calibration_file.endswith(".yml") or calibration_file.endswith(".yaml"):
             import yaml
             with open(calibration_file, "r") as f:
                 calibration_result = yaml.safe_load(f)
@@ -62,7 +62,7 @@ class ManualCalibrator:
             elif pressed_key == "i":
                 self.base_T_cam[2, 3] += self.pos_scale
             elif pressed_key == "k":
-                self.base_T_cam[2, 3] += self.pos_scale
+                self.base_T_cam[2, 3] -= self.pos_scale
             elif pressed_key == "r":
                 self.euler_angles[0] += self.rad_scale
             elif pressed_key == "e":
@@ -115,6 +115,7 @@ class ManualCalibrator:
                 image[min(max(y - 1, 0), image.shape[0]): min(max(y + 2, 0), image.shape[0]), 
                     min(max(x - 1, 0), image.shape[1]): min(max(x + 2, 0), image.shape[1])] = color
             cv2.imshow("calibration", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(25)
     
     def _getkey(self):
         old_settings = termios.tcgetattr(sys.stdin)

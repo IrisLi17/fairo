@@ -26,7 +26,7 @@ def main(args):
         with open(args.calibration_file, "rb") as f:
             calibration_result = pickle.load(f)
             base_T_cam = calibration_result["base_T_cam"]  
-    elif args.calibration_file.endswith(".yml"):
+    elif args.calibration_file.endswith(".yml") or args.calibration_file.endswith(".yaml"):
         import yaml
         with open(args.calibration_file, "r") as f:
             calibration_result = yaml.safe_load(f)
