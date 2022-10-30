@@ -4,6 +4,7 @@ from polymetis import RobotInterface, CameraInterface, GripperInterface
 import numpy as np
 from datetime import datetime
 import os
+import cv2
 import pickle
 import pygame
 import threading
@@ -40,8 +41,12 @@ class DemoCollector:
                 rgb_image = image_i[..., :3]
                 depth_image.append(image_i[..., 3])
                 count += 1
+                print("In image capture", count)
                 old_timestamp = stamp
         depth_image = np.median(np.array(depth_image), axis=0)
+        cv2.imshow("color", cv2.cvtColor(rgb_image.astype(np.uint8), cv2.COLOR_RGB2BGR))
+        cv2.imshow("depth", depth_image)
+        cv2.waitKey(1000)
         return rgb_image, depth_image
 
     def loop(self):
@@ -60,6 +65,15 @@ class DemoCollector:
                 self.save_obj["obs"].append({"color": rgb_image.astype(np.uint8), "depth": depth_image.astype(np.float32)})
                 print("Get image")
                 self.trigger_obs = False
+            elif len(self.save_obj["obs"]) == 0:
+                time.sleep(0.1)
+                continue
+            if self.trigger_save:
+                print("Saving")
+                with open(self.demo_path, "wb") as f:
+                    pickle.dump(self.save_obj, f)
+                print("Demo saved to", self.demo_path)
+                break
             self.command_queue.get()
             ee_pose = self.robot_interface.get_ee_pose()
             gripper_state = self.gripper_interface.get_state()
@@ -79,11 +93,6 @@ class DemoCollector:
                     self.gripper_interface.goto(width=0.08, speed=0.1, force=1)
                     self.save_obj["action"][-1]["p1"] = ee_pose
             self.command_queue.task_done()
-            if self.trigger_save:
-                with open(self.demo_path, "wb") as f:
-                    pickle.dump(self.save_obj, f)
-                print("Demo saved to", self.demo_path)
-                break
             
     def joystick_listener(self):
         while True:
@@ -103,6 +112,7 @@ class DemoCollector:
                     elif event.button == 1: #B
                         self.trigger_save = True
                         print("Save and exit")
+                        break
                     elif event.button == 2: # X
                         self.trigger_obs = True
                         print("Trigger obs")
