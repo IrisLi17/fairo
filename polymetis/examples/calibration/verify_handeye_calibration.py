@@ -3,6 +3,7 @@ import os
 from polymetis import CameraInterface, RobotInterface
 import cv2
 import numpy as np
+import torch
 import torchcontrol.transform.rotation as rotation
 import matplotlib.pyplot as plt
 import pickle
@@ -21,9 +22,22 @@ def main(args):
     )
     dist_coeffs = camera_intrinsic["coeffs"]
     assert os.path.exists(args.calibration_file)
-    with open(args.calibration_file, "rb") as f:
-        calibration_result = pickle.load(f)
-        base_T_cam = calibration_result["base_T_cam"]    
+    if args.calibration_file.endswith(".pkl"):
+        with open(args.calibration_file, "rb") as f:
+            calibration_result = pickle.load(f)
+            base_T_cam = calibration_result["base_T_cam"]  
+    elif args.calibration_file.endswith(".yml"):
+        import yaml
+        with open(args.calibration_file, "r") as f:
+            calibration_result = yaml.safe_load(f)
+        _trans: dict = calibration_result["transformation"]
+        base_T_cam = np.eye(4)
+        base_T_cam[:3, 3] = np.array([_trans["x"], _trans["y"], _trans["z"]])
+        base_T_cam[:3, :3] = rotation.from_quat(
+            torch.Tensor([_trans["qx"], _trans["qy"], _trans["qz"], _trans["qw"]])
+        ).as_matrix().numpy()
+    else:
+        raise NotImplementedError
     fig, ax = plt.subplots(1, 1)
     while True:
         image, stamp = camera_interface.read_once()
