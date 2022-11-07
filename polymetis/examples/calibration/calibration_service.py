@@ -1,5 +1,6 @@
 import argparse
 from collections import deque
+from enum import Enum
 import time
 import threading
 from typing import List, Literal, Tuple
@@ -9,6 +10,11 @@ from polymetis import CameraInterface, RobotInterface
 import matplotlib.pyplot as plt
 import termios, tty, sys, os
 from copy import deepcopy
+
+
+class BoardTypes(Enum):
+    CHARUCO = 1
+    CIRCLE = 2
 
 
 class CalibrationBackend:
@@ -196,7 +202,7 @@ class CalibrationService:
                 print(f"Calibration result saved to {save_path}")
 
     def visualize_loop(self):
-        fig, ax = plt.subplots(1, 2, figsize=(18, 8))
+        # fig, ax = plt.subplots(1, 2, figsize=(18, 8))
         while True:
             if not self.capture_image_lock:
                 image, stamp = self.camera_interface.read_once()
@@ -222,12 +228,15 @@ class CalibrationService:
                         )
                     )
                 new_image = self.calibration_backend.draw_markers(image, marker_corners, charuco_corners)
-                ax[0].cla()
-                ax[0].imshow(new_image)
-                ax[0].set_title(stamp)
-                ax[1].cla()
-                ax[1].imshow(self.merged_feature_image)
-                plt.pause(0.1)
+                # ax[0].cla()
+                # ax[0].imshow(new_image)
+                # ax[0].set_title(stamp)
+                # ax[1].cla()
+                # ax[1].imshow(self.merged_feature_image)
+                # plt.pause(0.1)
+                cv2.imshow("Calibration", cv2.cvtColor(new_image, cv2.COLOR_RGB2BGR))
+                cv2.imshow("Features", cv2.cvtColor(self.merged_feature_image, cv2.COLOR_RGB2BGR))
+                cv2.waitKey(70)
             else:
                 time.sleep(0.5)
     

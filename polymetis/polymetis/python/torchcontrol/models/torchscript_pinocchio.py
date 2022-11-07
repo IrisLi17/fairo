@@ -70,7 +70,8 @@ class RobotModelPinocchio(torch.nn.Module):
         Get the link index from the link name, or use the end-effector link index
         if link_name is None.
         """
-        if not link_name:
+        # Issue with torch 1.7. Should revert after this project
+        if link_name is not None:
             frame_idx = self.ee_link_idx
             assert frame_idx, (
                 "No end-effector link set during initialization, so link_name must "

@@ -59,13 +59,15 @@ class DemoCollector:
             if not os.path.exists(self.save_path):
                 os.makedirs(self.save_path)
 
-    def run(self, demo_path="demo.pkl"):
-        if os.path.exists(demo_path):
-            ans = input(demo_path + " exists, going to remove? [y]")
-            if ans == "y":
-                os.remove(demo_path)
-            else:
-                return
+    def run(self):
+        # if os.path.exists(demo_path):
+        #     ans = input(demo_path + " exists, going to remove? [y]")
+        #     if ans == "y":
+        #         os.remove(demo_path)
+        #     else:
+        #         return
+        date_time = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f")
+        demo_path = os.path.join(self.save_path, "demo" + date_time + ".pkl")
         self.robot.go_home()
         self.robot_initial_quat = self.robot.get_ee_pose()[1]
         self.robot.start_cartesian_impedance()
@@ -131,8 +133,7 @@ class DemoCollector:
             if (torch.Tensor(robot_state.joint_positions) - old_robot_state[0]).abs().max() > 0.02 \
                 or abs(gripper_state.width - old_robot_state[1]) > 0.01:
                 if self.save_file:
-                    date_time = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f")
-                    with open(os.path.join(self.save_path, "demo" + date_time + ".pkl"), "ab") as f:
+                    with open(demo_path, "ab") as f:
                         record_obj.update(dict(
                             robot_state=robot_state, gripper_state=gripper_state, 
                             image=camera_image.astype(np.uint8) if camera_image.shape[2] == 3 else camera_image.astype(np.float32), 
