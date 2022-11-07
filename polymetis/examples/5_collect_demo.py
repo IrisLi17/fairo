@@ -295,5 +295,5 @@ if __name__ == "__main__":
     arg_parser.add_argument("--ip", default="localhost", type=str)
     arg_parser.add_argument("--save_path", default=None, type=str)
     args = arg_parser.parse_args()
-    demo_controller = DemoCollector(ip_address=args.ip, save_file=True)
+    demo_controller = DemoCollector(ip_address=args.ip, save_file=True, save_path=args.save_path)
     demo_controller.run()

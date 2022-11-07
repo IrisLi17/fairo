@@ -37,14 +37,19 @@ class DemoCollector:
             [0, intrinsic_dict["fy"], intrinsic_dict["ppy"]],
             [0, 0, 1]
         ])
-        with open(calibration_file, "r") as f:
-            calibration_result = yaml.safe_load(f)
-        _trans: dict = calibration_result["transformation"]
-        base_T_cam = np.eye(4)
-        base_T_cam[:3, 3] = np.array([_trans["x"], _trans["y"], _trans["z"]])
-        base_T_cam[:3, :3] = rotation.from_quat(
-            torch.Tensor([_trans["qx"], _trans["qy"], _trans["qz"], _trans["qw"]])
-        ).as_matrix().numpy()
+        if calibration_file.endswith(".yml") or calibration_file.endswith(".yaml"):
+            with open(calibration_file, "r") as f:
+                calibration_result = yaml.safe_load(f)
+            _trans: dict = calibration_result["transformation"]
+            base_T_cam = np.eye(4)
+            base_T_cam[:3, 3] = np.array([_trans["x"], _trans["y"], _trans["z"]])
+            base_T_cam[:3, :3] = rotation.from_quat(
+                torch.Tensor([_trans["qx"], _trans["qy"], _trans["qz"], _trans["qw"]])
+            ).as_matrix().numpy()
+        else:
+            with open(calibration_file, "rb") as f:
+                calibration_result = pickle.load(f)
+            base_T_cam = calibration_result["base_T_cam"]
         self.camera_config = CameraConfig()
         self.camera_config.intrinsic = intrinsic_matrix
         self.camera_config.base_T_cam = base_T_cam
