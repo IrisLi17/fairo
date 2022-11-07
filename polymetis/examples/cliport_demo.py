@@ -75,31 +75,12 @@ class DemoCollector:
         cv2.waitKey(1000)
         return rgb_image, depth_image
 
-    def control_callback(self):
-        while True:
-            self.command_queue.get()
-            ee_pose = self.robot_interface.get_ee_pose()
-            gripper_state = self.gripper_interface.get_state()
-            if gripper_state.is_moving:
-                self.command_queue.task_done()
-                continue
-            if (not gripper_state.is_grasped) and (gripper_state.width >= 1e-3):
-                if len(self.save_obj["obs"]) - len(self.save_obj["action"]) < 1:
-                    print("Please trigger observation before p0. Action ignored")
-                else:
-                    self.gripper_interface.grasp(speed=0.1, force=5)
-                    self.save_obj["action"].append({"p0": ee_pose})
-            else:
-                if len(self.save_obj["action"]) == 0 or "p1" in self.save_obj["action"][-1]:
-                    print("Not the time to trigger p1. Action ignored")
-                else:
-                    self.gripper_interface.goto(width=0.08, speed=0.1, force=1)
-                    self.save_obj["action"][-1]["p1"] = ee_pose
-                    image, stamp = self.camera_interface.read_once()
-                    self.save_obj["final_obs"] = image.copy()
-            self.command_queue.task_done()
-
     def loop(self):
+        print("What will happen with this tool: you will first need to type the language goal, then press enter. \
+               The camera will then capture the scene. Wait until a window named processed poped out. \
+               Click the pixel to pick then the pixel to place on the processed image. \
+               The robot will start moving after receiving the two clicks. \
+               The scripts will automatically dump the demonstration to the folder name you specified and terminates.")
         self.robot_interface.set_home_pose(torch.Tensor([0., -0.785, 0., -2.356, 0., 1.571, 0.785]))
         self.robot_interface.go_home()
         initial_pos, quat = self.robot_interface.get_ee_pose()
@@ -140,9 +121,9 @@ class DemoCollector:
                 # convert to link8 position
                 p0[2] += 0.1034
                 p1[2] += 0.1034
-                # misterous offset
-                p0[1] += 0.05
-                p1[1] += 0.05
+                # Manual offset if you cannot get better calibration. 
+                # p0[1] += 0.05
+                # p1[1] += 0.05
                 approach_pos = p0 + torch.Tensor([0, 0, 0.1])
                 # disable for debugging
                 self.robot_interface.move_to_ee_pose(approach_pos, quat)
@@ -186,26 +167,6 @@ class DemoCollector:
                 
             time.sleep(0.1) 
             
-    def joystick_listener(self):
-        while True:
-            events = pygame.event.get([pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION])
-            for event in events:
-                if event.type == pygame.JOYBUTTONDOWN:
-                    # if event.button == 4:
-                    #     # if not gripper_state.is_moving:
-                    #     try:
-                    #         self.command_queue.put("toggle", block=False)
-                    #     except queue.Full:
-                    #         pass
-                    # elif event.button == 1: #B
-                    #     self.trigger_save = True
-                    #     print("Save and exit")
-                    #     break
-                    if event.button == 2: # X
-                        self.trigger_obs = True
-                        print("Trigger obs")
-            time.sleep(0.2)
-
 
 def pix_to_xyz(pixel, height, bounds, pixel_size, skip_height=False):
     """Convert from pixel location on heightmap to 3D position."""

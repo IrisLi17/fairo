@@ -19,7 +19,52 @@
 
 ## Get started
 
-To get started, you only need one line:
+To install from source, you need to run the following lines on NUC (for control) and a GPU machine (for training/inference)
+```
+git clone git@git.tsinghua.edu.cn:liyf20/fairo.git
+cd fairo/polymetis
+# Create environment from appropriate files
+# Only on NUC
+conda env create -f ./polymetis/environment-cpu.yml
+# Only on GPU
+conda env create -f ./polymetis/environment.yml # Pytorch version is 1.10.0 with cudatoolkit 11.3, you can modify these versions to your needs, e.g., CLIPort requires pytorch 1.7 + cuda 11.0
+
+conda activate polymetis-local
+pip install -e ./polymetis
+
+# Only required on NUC
+./scripts/build_libfranka.sh 0.9.0
+
+# Build from source
+mkdir -p ./polymetis/build
+cd ./polymetis/build
+# Set -DBUILD_FRANKA=ON on NUC; set -DBUILD_FRANKA=OFF on GPU machine
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_FRANKA=[OFF/ON] -DBUILD_TESTS=OFF -DBUILD_DOCS=OFF
+make -j
+```
+(Disclaimer: Dependencies related to the camera and gamepad, such as `pyrealsense2`, `opencv-python`, `pygame` have not been updated in `*.yml`. You can install them via `pip`.)
+
+After turning on the robot and activating FCI, you can start services on NUC with the following lines. Each line runs in a separate tab/terminal.
+```
+# Robot service requires sudo. The readonly=true can be used in applications like calibration where we want to make sure no control command is sent to the robot.
+python polymetis/python/scripts/launch_robot.py robot_client=franka_hardware [robot_client.executable_cfg.readonly=true]
+# Camera service.
+python polymetis/python/scripts/launch_camera.py width=848 height=480 framerate=15 downsample=1 use_depth=[true/false] # Valid combination of resolution and framerate can be looked up from RealSense datasheets. 
+# Gripper service.
+python polymetis/python/scripts/launch_gripper.py gripper=franka_hand
+``` 
+
+Now you can move to the GPU machine and try talking with these services. For example, you can open up a python shell (when `polymetis-local` environment is activated) and try:
+```
+from polymetis import RobotInterface
+robot_interface = RobotInterface(ip_address="10.100.7.16") # This was the IP of the NUC, please double check.
+robot_interface.go_home()
+```
+Some example code snippets are in `examples`. You can read camera images with `python examples/camera_monitor.py <ip>`, play with grippers with `python examples/gripper_test.py [ip] [open/close]`.
+
+A pick-and-place demo collector is in `examples/cliport_demo.py`. You can try with `python examples/cliport_demo.py --ip=[ip] --folder_name=[folder_to_store_demonstrations] --calibration_file=[path_to_easyhandeye_calibration_yml]`. Currently, it can only read hand-eye calibration results from the yml generated from easy_handeye, which by default locates under the folder `~/.ros/easy_hand_eye`.  
+
+[The following part is from the official repo, which does not include cameras] To get started, you only need one line:
 
 ```
 conda install -c pytorch -c fair-robotics -c aihabitat -c conda-forge polymetis

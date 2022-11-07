@@ -1,11 +1,13 @@
 from polymetis import RobotInterface
 import torch
+import sys
 
 
 if __name__ == "__main__":
     # Initialize robot interface
+    ip = sys.argv[1]
     robot = RobotInterface(
-        ip_address="101.6.103.171",
+        ip_address=ip,
     )
     # Ready pose in ROS
     # robot.set_home_pose(

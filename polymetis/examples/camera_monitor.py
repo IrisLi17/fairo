@@ -1,10 +1,12 @@
 from polymetis import CameraInterface
 import cv2
 import numpy as np
+import sys
 
 
 if __name__ == "__main__":
-    camera = CameraInterface(ip_address="101.6.103.171")
+    ip = sys.argv[1]
+    camera = CameraInterface(ip_address=ip)
     (image, timestamp) = camera.read_once()
     n_channel = image.shape[-1]
     # if n_channel == 3:
