@@ -26,10 +26,13 @@ class DemoCollector:
         self.demo_path = None
         # self.trigger_obs = False
         # self.trigger_save = False
-        self.save_obj = {"obs": [], "action": [], "intrinsics": None}
+        self.save_obj = {"obs": [], "action": [], "intrinsics": None, "pick_traj": None, "place_traj": None}
         # self.command_queue = queue.Queue(maxsize=1)
 
         self.clicked_positions = []
+        self.drag_positions = []
+        self._drawing = False
+        self._preview = None
         self.dummy_dataset = DummyDataset()
         intrinsic_dict = self.camera_interface.get_intrinsic()
         intrinsic_matrix = np.array([
@@ -81,20 +84,40 @@ class DemoCollector:
         return rgb_image, depth_image
 
     def loop(self):
-        print("What will happen with this tool: you will first need to type the language goal, then press enter. \
-               The camera will then capture the scene. Wait until a window named processed poped out. \
-               Click the pixel to pick then the pixel to place on the processed image. \
-               The robot will start moving after receiving the two clicks. \
-               The scripts will automatically dump the demonstration to the folder name you specified and terminates.")
-        self.robot_interface.set_home_pose(torch.Tensor([0., -0.785, 0., -2.356, 0., 1.571, 0.785]))
+        print("What will happen with this tool: you will first need to type the language goal, then press enter. \n" 
+              "The camera will then capture the scene. Wait until a window named processed poped out. \n"
+              "Click the pixel to pick then drag the line to indicate the long axis of the gripper. Do the same for placement. \n"
+              "Press esc. "
+              "The robot will start moving after receiving the two clicks. \n"
+              "The scripts will automatically dump the demonstration to the folder name you specified and terminates.\n")
+        # self.robot_interface.set_home_pose(torch.Tensor([0., -0.785, 0., -2.356, 0., 1.571, 0.785]))
         self.robot_interface.go_home()
-        initial_pos, quat = self.robot_interface.get_ee_pose()
-        print("initial pos", initial_pos, "quat", quat)
+        # initial_pos, quat = self.robot_interface.get_ee_pose()
+        # print("initial pos", initial_pos, "quat", quat)
+        quat = torch.Tensor([0.9211, -0.3892,  0.0022, -0.0074])
 
         def mouse_cb(event, x, y, flags, param):
+            # TODO: drag to pass in orientation
             if event == cv2.EVENT_LBUTTONDOWN:
                 print("catch mouse", (y, x))
                 self.clicked_positions.append((y, x))
+                self._drawing = True
+                self._preview = cv_image.copy()
+            elif event == cv2.EVENT_MOUSEMOVE:
+                if self._drawing:
+                    self._preview = cv_image.copy()
+                    cv2.line(
+                        self._preview, (self.clicked_positions[-1][1], self.clicked_positions[-1][0]), 
+                        (x, y), (0, 255, 0), 1
+                    )
+            elif event == cv2.EVENT_LBUTTONUP:
+                self._drawing = False
+                self._preview = None
+                cv2.line(
+                    cv_image, (self.clicked_positions[-1][1], self.clicked_positions[-1][0]),
+                    (x, y), (0, 255, 0), 1
+                )
+                self.drag_positions.append((y, x))
 
         while True:
             if self.demo_path is None:
@@ -111,49 +134,79 @@ class DemoCollector:
                     np.concatenate([rgb_image, np.expand_dims(depth_image, axis=-1)], axis=-1), self.camera_config)
                 cmap = processd_image[..., :3].astype(np.uint8)
                 hmap = processd_image[..., 3]
-                cv2.imshow("processed", cv2.cvtColor(cmap, cv2.COLOR_RGB2BGR))
+                cv_image = cv2.cvtColor(cmap, cv2.COLOR_RGB2BGR)
+                cv2.imshow("processed", cv_image)
                 cv2.setMouseCallback("processed", mouse_cb)
-                cv2.waitKey(0)
+                while True:
+                    if self._preview is None:
+                        cv2.imshow("processed", cv_image)
+                    else:
+                        cv2.imshow("processed", self._preview)
+                    k = cv2.waitKey(1) & 0xFF
+                    if k == 27 and len(self.clicked_positions) >= 2:
+                        break
+                # cv2.waitKey(0)
 
-                while len(self.clicked_positions) < 2:
-                    time.sleep(1)
+                # while len(self.clicked_positions) < 2:
+                #     time.sleep(1)
                 print("clicked position", self.clicked_positions)
                 p0 = pix_to_xyz(self.clicked_positions[0], hmap, self.dummy_dataset.bounds, self.dummy_dataset.pix_size)
                 p1 = pix_to_xyz(self.clicked_positions[1], hmap, self.dummy_dataset.bounds, self.dummy_dataset.pix_size)
                 p0 = torch.Tensor(p0)
                 p1 = torch.Tensor(p1)
-                print("converted xyz", p0, p1)
+                theta0 = np.arctan2(self.drag_positions[0][1] - self.clicked_positions[0][1], -self.drag_positions[0][0] + self.clicked_positions[0][0])
+                theta1 = np.arctan2(self.drag_positions[1][1] - self.clicked_positions[1][1], -self.drag_positions[1][0] + self.clicked_positions[1][0])
+                print("theta0", theta0, "theta1", theta1)
+                quat0 = (rotation.from_quat(torch.Tensor([0, 0, np.sin(theta0 / 2), np.cos(theta0 / 2)])) * rotation.from_quat(quat)).as_quat()
+                quat1 = (rotation.from_quat(torch.Tensor([0, 0, np.sin(theta1 / 2), np.cos(theta1 / 2)])) * rotation.from_quat(quat)).as_quat()
+                print("converted xyz", (p0, quat0), (p1, quat1))
                 # convert to link8 position
                 p0[2] += 0.1034
                 p1[2] += 0.1034
-                # Manual offset if you cannot get better calibration. 
-                # p0[1] += 0.05
-                # p1[1] += 0.05
-                approach_pos = p0 + torch.Tensor([0, 0, 0.1])
+                # Since p0 and p1 are surface coordinates, convert to robot pose here
+                p0[2] -= 0.01
+                p1[2] += 0.05 - 0.01
+                approach_pos = p0 + torch.Tensor([0, 0, 0.05])
                 # disable for debugging
-                self.robot_interface.move_to_ee_pose(approach_pos, quat)
-                print("Desired ee pose", p0, quat)
-                self.robot_interface.move_to_ee_pose(p0, quat, Kx=1.2 * self.robot_interface.Kx_default)
+                self.robot_interface.move_to_ee_pose(approach_pos, quat0)
+                print("Desired pick ee pose", p0, quat0)
+                pick_traj = self.robot_interface.move_to_ee_pose(p0, quat0)
                 ee_pose = self.robot_interface.get_ee_pose()
-                print("Resulting ee pose", ee_pose)
+                # if torch.norm(ee_pose[0] - p0) > 2e-3:
+                #     new_Kx = torch.clone(self.robot_interface.Kx_default)
+                #     new_Kx[:3] *= 1.2
+                #     pick_traj += self.robot_interface.move_to_ee_pose(p0, quat0, Kx=new_Kx)
+                #     ee_pose = self.robot_interface.get_ee_pose()
+                print("Resulting pick ee pose", ee_pose)
+                self.save_obj["desired_p0"] = (p0, quat0)
                 self.save_obj["action"].append({"p0": ee_pose})
+                self.save_obj["pick_traj"] = pick_traj
                 # pick
-                self.gripper_interface.grasp(speed=0.1, force=2)
+                self.gripper_interface.grasp(speed=0.1, force=5)
                 time.sleep(1)
                 while self.gripper_interface.get_state().is_moving:
                     time.sleep(0.1)
-                self.robot_interface.move_to_ee_pose(approach_pos, quat)
-                place_approach_pos = p1 + torch.Tensor([0, 0, 0.1])
-                self.robot_interface.move_to_ee_pose(place_approach_pos, quat, op_space_interp=False)
-                self.robot_interface.move_to_ee_pose(p1, quat, Kx=1.2 * self.robot_interface.Kx_default)
+                self.robot_interface.move_to_ee_pose(approach_pos, quat0)
+                place_approach_pos = p1 + torch.Tensor([0, 0, 0.05])
+                self.robot_interface.move_to_ee_pose(place_approach_pos, quat1, op_space_interp=True)
+                print("Desired placement ee pose", p1, quat1)
+                placement_traj = self.robot_interface.move_to_ee_pose(p1, quat1, Kx=1.0 * self.robot_interface.Kx_default)
                 ee_pose = self.robot_interface.get_ee_pose()
+                # if torch.norm(ee_pose[0] - p1) > 2e-3:
+                #     new_Kx = torch.clone(self.robot_interface.Kx_default)
+                #     new_Kx[:3] *= 1.2
+                #     placement_traj += self.robot_interface.move_to_ee_pose(p1, quat1, Kx=new_Kx)
+                #     ee_pose = self.robot_interface.get_ee_pose()
+                print("Placement ee pose", ee_pose)
+                self.save_obj["desired_p1"] = (p1, quat1)
                 self.save_obj["action"][-1]["p1"] = ee_pose
+                self.save_obj["place_traj"] = placement_traj
                 # release
                 self.gripper_interface.goto(width=0.08, speed=0.1, force=1)
                 time.sleep(1)
                 while self.gripper_interface.get_state().is_moving:
                     time.sleep(1)
-                self.robot_interface.move_to_ee_pose(place_approach_pos, quat)
+                self.robot_interface.move_to_ee_pose(place_approach_pos, quat1)
                 # reset
                 self.robot_interface.go_home()
                 image, stamp = self.camera_interface.read_once()
