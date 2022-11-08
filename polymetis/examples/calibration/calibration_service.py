@@ -91,7 +91,17 @@ class CalibrationBackend:
             list_t_tcp = [pose[:3, 3:] for pose in list_ee_pose]
             r_gripper_cam, t_gripper_cam = cv2.calibrateHandEye(list_r_tcp, list_t_tcp, list_r_board, list_t_board)
             gripper_T_cam = np.concatenate([np.concatenate([r_gripper_cam, t_gripper_cam], axis=-1), np.array([[0., 0., 0., 1.]])], axis=0)
-            return gripper_T_cam
+            # base_T_board = base_T_eef @ gripper_T_cam @ cam_T_board
+            base_T_board = []
+            for i in range(len(list_r_tcp)):
+                cam_T_board = np.eye(4)
+                cam_T_board[:3, :3] = cv2.Rodrigues(list_r_board[i])[0]
+                cam_T_board[:3, 3:] = list_t_board[i]
+                base_T_board.append(list_ee_pose[i] @ gripper_T_cam @ cam_T_board)
+            base_rvec_board = np.array([cv2.Rodrigues(mat[:3, :3])[0] for mat in base_T_board]).squeeze(axis=-1)
+            base_tvec_board = np.array([mat[:3, 3] for mat in base_T_board])
+            debug = {"base_rvec_board": base_rvec_board, "base_tvec_board": base_tvec_board}
+            return gripper_T_cam, debug
         else:
             # eye on base
             inv_list_ee_pose = [np.linalg.inv(pose) for pose in list_ee_pose]
@@ -99,7 +109,17 @@ class CalibrationBackend:
             inv_list_t_tcp = [pose[:3, 3:] for pose in inv_list_ee_pose]
             r_base_cam, t_base_cam = cv2.calibrateHandEye(inv_list_r_tcp, inv_list_t_tcp, list_r_board, list_t_board)
             base_T_cam = np.concatenate([np.concatenate([r_base_cam, t_base_cam], axis=-1), np.array([[0., 0., 0., 1.]])], axis=0)
-            return base_T_cam
+            # eef_T_board = (ee_pose).inv @ base_T_cam @ cam_T_board
+            cam_T_board = [np.eye(4) for _ in range(len(list_r_board))]
+            eef_T_board = []
+            for i in range(len(list_r_board)):
+                cam_T_board[i][:3, :3] = cv2.Rodrigues(list_r_board[i])[0]
+                cam_T_board[i][:3, 3:] = list_t_board[i]
+                eef_T_board.append(inv_list_ee_pose[i] @ base_T_cam @ cam_T_board[i])
+            eef_rvec_board = np.array([cv2.Rodrigues(mat[:3, :3])[0] for mat in eef_T_board]).squeeze(axis=-1)
+            eef_tvec_board = np.array([mat[:3, 3] for mat in eef_T_board])
+            debug = {"eef_rvec_board": eef_rvec_board, "eef_tvec_board": eef_tvec_board}
+            return base_T_cam, debug
 
     def draw_markers(self, image, marker_corners=None, charuco_corners=None):
         image = image.copy().astype(np.uint8)
@@ -156,22 +176,28 @@ class CalibrationService:
         self.keyboard_monitor_thr.start()
         self.visualize_loop()
     
+    def _update_merged_features(self):
+        self.merged_feature_image = np.zeros_like(self.merged_feature_image)
+        for i in range(len(self.captured_data)):
+            for point in self.captured_data[i]["charuco_corners"]:
+                self.merged_feature_image[
+                    max(int(point[1]) - 1, 0): min(int(point[1]) + 2, self.merged_feature_image.shape[0]), 
+                    max(int(point[0]) - 1, 0): min(int(point[0]) + 2, self.merged_feature_image.shape[1])
+                ] = np.array([255, 0, 0], dtype=np.uint8)
+
     def keyboard_monitor(self):
         while True:
             pressed_key = self._getkey()
             if pressed_key == "c":
                 self.capture_image_lock = True
                 self.captured_data.append(deepcopy(self.current_image_and_feature))
-                # update merged features
-                self.merged_feature_image = np.zeros_like(self.merged_feature_image)
-                for i in range(len(self.captured_data)):
-                    for point in self.captured_data[i]["charuco_corners"]:
-                        self.merged_feature_image[
-                            max(int(point[1]) - 1, 0): min(int(point[1]) + 2, self.merged_feature_image.shape[0]), 
-                            max(int(point[0]) - 1, 0): min(int(point[0]) + 2, self.merged_feature_image.shape[1])
-                        ] = np.array([255, 0, 0], dtype=np.uint8)
+                self._update_merged_features()
                 print(f"Capture {len(self.captured_data)}")
                 self.capture_image_lock = False
+            elif pressed_key == "d":
+                self.captured_data.pop()
+                self._update_merged_features()
+                print(f"Removed the latest capture, remaining capture number {len(self.captured_data)}")
             elif pressed_key == "r":
                 if len(self.captured_data) < 3:
                     print("Insufficient captures, please collect more")
@@ -187,8 +213,10 @@ class CalibrationService:
                     all_ee_pose = [self.captured_data[i]["ee_pose"] for i in range(len(self.captured_data))]
                     all_board_rvec = [self.captured_data[i]["board_rvec"] for i in range(len(self.captured_data))]
                     all_board_tvec = [self.captured_data[i]["board_tvec"] for i in range(len(self.captured_data))]
-                    base_T_cam = self.calibration_backend.calibrate_handeye(all_ee_pose, all_board_rvec, all_board_tvec, eye_on_hand=False)
-                    self.calibration_result = {"base_T_cam": base_T_cam}
+                    base_T_cam, debug_info = self.calibration_backend.calibrate_handeye(
+                        all_ee_pose, all_board_rvec, all_board_tvec, eye_on_hand=False
+                    )
+                    self.calibration_result = {"base_T_cam": base_T_cam, "debug_info": debug_info}
                     print(f"base_T_cam", self.calibration_result)
                 self.capture_image_lock = False
             elif pressed_key == "s":
@@ -200,6 +228,9 @@ class CalibrationService:
                 with open(save_path, "wb") as f:
                     pickle.dump(self.calibration_result, f)
                 print(f"Calibration result saved to {save_path}")
+                with open("calib_raw_data.pkl", "wb") as f:
+                    pickle.dump(self.captured_data, f)
+                print(f"Raw data saved to calib_raw_data.pkl")
 
     def visualize_loop(self):
         # fig, ax = plt.subplots(1, 2, figsize=(18, 8))
@@ -211,7 +242,7 @@ class CalibrationService:
                     # self.current_image_and_feature = (image, charuco_corners, charuco_ids, board_rvec, board_tvec)
                     self.current_image_and_feature.update(
                         dict(
-                            image=image, charuco_corners=charuco_corners, charuco_ids=charuco_ids,
+                            image=image.astype(np.uint8), charuco_corners=charuco_corners, charuco_ids=charuco_ids,
                             board_rvec=board_rvec, board_tvec=board_tvec,
                         )  
                     )
