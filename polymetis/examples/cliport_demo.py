@@ -2,17 +2,17 @@ import argparse
 import queue
 from polymetis import RobotInterface, CameraInterface, GripperInterface
 import torchcontrol.transform.rotation as rotation
-from transporter_deploy import DummyDataset, CameraConfig
+from cliport.dataset import RealDataset
 import numpy as np
 from datetime import datetime
 import os
 import cv2
 import pickle
-import pygame
 import threading
 import time
 import torch
 import yaml
+import random
 
 
 class DemoCollector:
@@ -33,7 +33,8 @@ class DemoCollector:
         self.drag_positions = []
         self._drawing = False
         self._preview = None
-        self.dummy_dataset = DummyDataset()
+        # self.dummy_dataset = DummyDataset()
+        self.dummy_dataset = RealDataset(path="./", cfg=dict(dataset={"images": True, "cache": True}))
         intrinsic_dict = self.camera_interface.get_intrinsic()
         intrinsic_matrix = np.array([
             [intrinsic_dict["fx"], 0, intrinsic_dict["ppx"]],
@@ -53,9 +54,13 @@ class DemoCollector:
             with open(calibration_file, "rb") as f:
                 calibration_result = pickle.load(f)
             base_T_cam = calibration_result["base_T_cam"]
-        self.camera_config = CameraConfig()
-        self.camera_config.intrinsic = intrinsic_matrix
-        self.camera_config.base_T_cam = base_T_cam
+        self.dummy_dataset.cam_config[0]["intrinsic"] = intrinsic_matrix.reshape(-1)
+        self.dummy_dataset.cam_config[0]["position"] = base_T_cam[:3, 3]
+        self.dummy_dataset.cam_config[0]["rotation"] = rotation.from_matrix(
+            torch.from_numpy(base_T_cam[:3, :3])).as_quat().numpy()
+        # self.camera_config = CameraConfig()
+        # self.camera_config.intrinsic = intrinsic_matrix
+        # self.camera_config.base_T_cam = base_T_cam
         
         # pygame.init()
         # self.joystick = pygame.joystick.Joystick(0)
@@ -124,14 +129,17 @@ class DemoCollector:
                 self.demo_path = os.path.join(self.folder_name, "demo" + datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-%f") + ".pkl")
                 intrinsics = self.camera_interface.get_intrinsic()
                 self.save_obj["intrinsics"] = intrinsics
-                lang_goal = input("Enter the language goal:")
+                # lang_goal = input("Enter the language goal:")
+                lang_goal = generate_lang()
+                print("Lang goal:", lang_goal)
                 self.save_obj["lang_goal"] = lang_goal
+                input("Press enter to continue...")
             if True:
                 rgb_image, depth_image = self.read_images()
                 self.save_obj["obs"].append({"color": rgb_image.astype(np.uint8), "depth": depth_image.astype(np.float32)})
                 print("Get image")
-                processd_image = self.dummy_dataset.get_image(
-                    np.concatenate([rgb_image, np.expand_dims(depth_image, axis=-1)], axis=-1), self.camera_config)
+                obs = {"color": [rgb_image], "depth": [depth_image]}
+                processd_image = self.dummy_dataset.get_image(obs)
                 cmap = processd_image[..., :3].astype(np.uint8)
                 hmap = processd_image[..., 3]
                 cv_image = cv2.cvtColor(cmap, cv2.COLOR_RGB2BGR)
@@ -236,6 +244,18 @@ def pix_to_xyz(pixel, height, bounds, pixel_size, skip_height=False):
     else:
         z = 0.0
     return (x, y, z)
+
+
+def generate_lang():
+    actions = ["stack", "put", "move"]
+    relations = ["onto", "on top of"]  # "beside", "to the left of", "to the right of", "in front of", "behind"
+    candidate_objects = ["red block", "yellow block", "green block", "blue block"]
+    template = "{action} the {obj1} {relation} the {obj2}"
+    action = np.random.choice(actions, size=1)[0]
+    relation = np.random.choice(relations, size=1)[0]
+    obj1, obj2 = np.random.choice(candidate_objects, size=2, replace=False)
+    lang = template.format(action=action, obj1=obj1, relation=relation, obj2=obj2)
+    return lang
 
 
 if __name__ == "__main__":
