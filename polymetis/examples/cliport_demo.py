@@ -16,7 +16,7 @@ import random
 
 
 class DemoCollector:
-    def __init__(self, ip_address: str, folder_name: str, calibration_file: str):
+    def __init__(self, ip_address: str, folder_name: str, calibration_file: str, save_debug: bool = False):
         self.robot_interface = RobotInterface(ip_address=ip_address)
         self.camera_interface = CameraInterface(ip_address=ip_address)
         self.gripper_interface = GripperInterface(ip_address=ip_address)
@@ -58,6 +58,8 @@ class DemoCollector:
         self.dummy_dataset.cam_config[0]["position"] = base_T_cam[:3, 3]
         self.dummy_dataset.cam_config[0]["rotation"] = rotation.from_matrix(
             torch.from_numpy(base_T_cam[:3, :3])).as_quat().numpy()
+        
+        self.save_debug = save_debug
         # self.camera_config = CameraConfig()
         # self.camera_config.intrinsic = intrinsic_matrix
         # self.camera_config.base_T_cam = base_T_cam
@@ -186,9 +188,10 @@ class DemoCollector:
                 #     pick_traj += self.robot_interface.move_to_ee_pose(p0, quat0, Kx=new_Kx)
                 #     ee_pose = self.robot_interface.get_ee_pose()
                 print("Resulting pick ee pose", ee_pose)
-                self.save_obj["desired_p0"] = (p0, quat0)
+                if self.save_debug:
+                    self.save_obj["desired_p0"] = (p0, quat0)
+                    self.save_obj["pick_traj"] = pick_traj
                 self.save_obj["action"].append({"p0": ee_pose})
-                self.save_obj["pick_traj"] = pick_traj
                 # pick
                 self.gripper_interface.grasp(speed=0.1, force=5)
                 time.sleep(1)
@@ -206,9 +209,10 @@ class DemoCollector:
                 #     placement_traj += self.robot_interface.move_to_ee_pose(p1, quat1, Kx=new_Kx)
                 #     ee_pose = self.robot_interface.get_ee_pose()
                 print("Placement ee pose", ee_pose)
-                self.save_obj["desired_p1"] = (p1, quat1)
+                if self.save_debug:
+                    self.save_obj["desired_p1"] = (p1, quat1)
+                    self.save_obj["place_traj"] = placement_traj
                 self.save_obj["action"][-1]["p1"] = ee_pose
-                self.save_obj["place_traj"] = placement_traj
                 # release
                 self.gripper_interface.goto(width=0.08, speed=0.1, force=1)
                 time.sleep(1)
@@ -263,6 +267,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--ip", default="localhost", type=str)
     arg_parser.add_argument("--folder_name", default=None, type=str)
     arg_parser.add_argument("--calibration_file", default=None, type=str)
+    arg_parser.add_argument("--save_debug", action="store_true", default=Falsse)
     args = arg_parser.parse_args()
     assert args.folder_name is not None
     if not os.path.exists(args.folder_name):
