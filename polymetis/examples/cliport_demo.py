@@ -267,7 +267,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--ip", default="localhost", type=str)
     arg_parser.add_argument("--folder_name", default=None, type=str)
     arg_parser.add_argument("--calibration_file", default=None, type=str)
-    arg_parser.add_argument("--save_debug", action="store_true", default=Falsse)
+    arg_parser.add_argument("--save_debug", action="store_true", default=False)
     args = arg_parser.parse_args()
     assert args.folder_name is not None
     if not os.path.exists(args.folder_name):
