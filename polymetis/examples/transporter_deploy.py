@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import time
 import threading
-import yaml
+import os, pickle, yaml
 
 
 class CameraConfig:
@@ -183,21 +183,27 @@ class TransporterController:
 
 if __name__ == "__main__":
     camera = CameraInterface(ip_address="101.6.103.171")
-    calibration_file = "/home/yunfei/Downloads/panda_eob_calib_eye_on_base.yaml"
+    # calibration_file = "/home/yunfei/Downloads/panda_eob_calib_eye_on_base.yaml"
+    calibration_file = os.path.join(os.path.dirname(__file__), "calib_handeye.pkl")
     intrinsic_dict = camera.get_intrinsic()
     intrinsic_matrix = np.array([
         [intrinsic_dict["fx"], 0, intrinsic_dict["ppx"]],
         [0, intrinsic_dict["fy"], intrinsic_dict["ppy"]],
         [0, 0, 1]
     ])
-    with open(calibration_file, "r") as f:
-        calibration_result = yaml.safe_load(f)
-    _trans: dict = calibration_result["transformation"]
-    base_T_cam = np.eye(4)
-    base_T_cam[:3, 3] = np.array([_trans["x"], _trans["y"], _trans["z"]])
-    base_T_cam[:3, :3] = rotation.from_quat(
-        torch.Tensor([_trans["qx"], _trans["qy"], _trans["qz"], _trans["qw"]])
-    ).as_matrix().numpy()
+    if calibration_file.endswith(".yaml"):
+        with open(calibration_file, "r") as f:
+            calibration_result = yaml.safe_load(f)
+        _trans: dict = calibration_result["transformation"]
+        base_T_cam = np.eye(4)
+        base_T_cam[:3, 3] = np.array([_trans["x"], _trans["y"], _trans["z"]])
+        base_T_cam[:3, :3] = rotation.from_quat(
+            torch.Tensor([_trans["qx"], _trans["qy"], _trans["qz"], _trans["qw"]])
+        ).as_matrix().numpy()
+    else:
+        with open(calibration_file, "rb") as f:
+            data = pickle.load(f)
+        base_T_cam = data["base_T_cam"]
     # o_t_cam = (0.5928584625283155, -0.543854739016389, 0.5912458350222481) # fake
     # o_q_cam = (-0.9062201724320003, -0.16421328818549003, 0.07074543799124425, 0.38313715307191526)
     # rot = rotation.from_quat(
