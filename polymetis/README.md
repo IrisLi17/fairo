@@ -62,7 +62,28 @@ robot_interface.go_home()
 ```
 Some example code snippets are in `examples`. You can read camera images with `python examples/camera_monitor.py <ip>`, play with grippers with `python examples/gripper_test.py [ip] [open/close]`.
 
-A pick-and-place demo collector is in `examples/cliport_demo.py`. You can try with `python examples/cliport_demo.py --ip=[ip] --folder_name=[folder_to_store_demonstrations] --calibration_file=[path_to_easyhandeye_calibration_yml]`. Currently, it can only read hand-eye calibration results from the yml generated from easy_handeye, which by default locates under the folder `~/.ros/easy_hand_eye`.  
+## Camera calibration
+
+Eye-on-base calibration: mount the calibration plate to the robot, make sure the camera is rigidly attached to the table/ground. Go to the robot webpage and set the end effector to `None`.
+Start services in NUC as follows
+```
+# In Tab 1
+python polymetis/python/scripts/launch_robot.py robot_client=franka_hardware robot_client.executable_cfg.readonly=true
+# In Tab 2
+python polymetis/python/scripts/launch_camera.py width=1280 height=720 framerate=15 downsample=1 use_depth=false
+```
+Switch the robot to white.
+Run calibration:
+```
+cd fairo/polymetis/examples
+python calibration/calibration_service.py [--ip="xxx"] # set ip if this line is run from GPU machine
+```
+Change the robot pose, and press `c` to capture one sample. After collecting 4 samples, press `r` to compute the transformation. If the matrix looks good, press `s` to save the result to `calib_handeye.pkl`. Press `ctrl-c` to stop calibration. Rename the file before running another calibration. The recommended way to verify the calibration is repeating the process for 3 times then check the variance of `debug_info` stored in the `pkl` file. The variance should be ~0.001.
+
+After calibration, replace the calibration plate with panda hand and remember to change the end effector setting in the webpage. 
+
+## CLIPort demo collection
+A pick-and-place demo collector is in `examples/cliport_demo.py`. You can try with `python examples/cliport_demo.py --ip=[ip] --folder_name=[folder_to_store_demonstrations] --calibration_file=[path_to_easyhandeye_calibration_yml]`. Hand-eye calibration results from the yml generated from easy_handeye (which by default locates under the folder `~/.ros/easy_hand_eye`) or the pkl generated from our calibration service can be applied.  
 
 [The following part is from the official repo, which does not include cameras] To get started, you only need one line:
 
